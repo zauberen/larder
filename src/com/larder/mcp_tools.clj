@@ -302,7 +302,11 @@
                           (catch clojure.lang.ExceptionInfo e
                             (fail (str "Ingredient " (inc i) ": " (ex-message e)))))))
         ids (map :id edits)
-        names (mapcat #(cons (:name (:values %)) (:aliases %)) edits)
+        ;; One entry per match key per ingredient, so an ingredient whose own names
+        ;; share a key ("extra virgin olive oil", "extra-virgin olive oil") doesn't clash with itself.
+        names (mapcat (fn [e] (vals (into {} (for [n (cons (:name (:values e)) (:aliases e))]
+                                               [(ingredients/match-key n) n]))))
+                      edits)
         clash (->> (group-by ingredients/match-key names) vals (filter #(< 1 (count %))) first)]
     (when (not= (count ids) (count (distinct ids))) (fail "Each ingredient may appear once per call."))
     (when clash (fail (str "\"" (first clash) "\" is given to more than one ingredient.")))

@@ -218,7 +218,11 @@
         (is (nil? (:density (ing/by-id tahini))))
         (is (str/includes? (second (call "update_ingredients" {:ingredients [{:id tahini :add_aliases ["sesame paste"]}
                                                                               {:id green :add_aliases ["Sesame pastes"]}]}))
-                           "more than one")))
+                           "more than one"))
+        (testing "an ingredient's own names sharing a match key don't clash"
+          (ing/set-aliases! tahini ["sesame-paste" "sesame paste"])
+          (is (nil? (second (call "update_ingredients" {:ingredients [{:id tahini :density 0.9}]}))))
+          (call "update_ingredients" {:ingredients [{:id tahini :density nil :aliases []}]})))
       (testing "update_ingredients edits only the fields given and rematches lines"
         (let [pitaya (ing/create! {:name "Pitaya" :dimension "count"})
               [r] (call "update_ingredients" {:ingredients [{:id tahini :density 0.95 :default_quantity 250 :default_unit "ml"}
