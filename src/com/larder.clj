@@ -1,0 +1,170 @@
+;; Larder - a household recipe, pantry and grocery list manager.
+;; Copyright (C) 2025-2026 zauberen
+;;
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU Affero General Public License as published
+;; by the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU Affero General Public License for more details.
+;;
+;; You should have received a copy of the GNU Affero General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+(ns com.larder
+  (:require [clojure.java.io :as io]
+            [clojure.pprint :as pprint]
+            [clojure.tools.logging :as log]
+            [compojure.core :as cjr]
+            [compojure.route :as route]
+            [ring.adapter.jetty :as jetty]
+            [ring.middleware.content-type :refer [wrap-content-type]]
+            [ring.middleware.cookies :refer [wrap-cookies]]
+            [ring.middleware.keyword-params :refer [wrap-keyword-params]]
+            [ring.middleware.params :refer [wrap-params]]
+            [ring.middleware.resource :refer [wrap-resource]]
+            [com.larder.api.session :as session]
+            [com.larder.auth :as auth]
+            [com.larder.database.db :as db]
+            [com.larder.database.sqlite :as sqlite]
+            [com.larder.middleware :as mw]
+            [com.larder.pages.app :as app]
+            [com.larder.pages.login :as lp]
+            [com.larder.pages.not-found :as nf]
+            [com.larder.pages.onboarding :as onboarding]
+            [com.larder.pages.public :as public]
+            [com.larder.pages.server-config :as server-config]
+            [com.larder.pages.settings :as app-settings]
+            [com.larder.response :as r]
+            [com.larder.settings :as s]
+            [com.larder.users :as users]
+            [com.larder.wrappers.path-utils :as pu]))
+
+(defonce ^:private server (atom nil))
+
+;; True while Larder waits for first-run setup (no settings file or no account).
+(defonce ^:private setup-required (atom false))
+
+(cjr/defroutes
+  routes
+  ;; API bindings
+  ; In debug mode, admins can see the raw request
+  (cjr/ANY "/api/echo" req
+    (when (:debug (s/get-settings))
+      (auth/requires-admin (fn [req _user]
+                             (r/respond-generic (with-out-str (pprint/pprint (dissoc req :body)))
+                                                "text/plain"))
+                           req)))
+  ; Do-nothing endpoint for htmx hackery
+  (cjr/GET "/api/null" []
+    (r/respond-generic "" "text/plain"))
+  ; Try logging into the application, requires username and password parameters
+  (cjr/POST "/api/login" req
+    (session/try-login req))
+  ;; Settings
+  (cjr/POST "/api/users" req
+    (auth/requires-admin app-settings/api-create-user req))
+  (cjr/POST "/api/users/:id/:action{role|password|disable|enable|delete}" [id action :as req]
+    (auth/requires-admin (fn [req me] (app-settings/api-user-action req me id action)) req))
+  (cjr/POST "/api/account/password" req
+    (auth/requires-user app-settings/api-change-password req))
+  (cjr/POST "/api/site/settings" req
+    (auth/requires-admin app-settings/api-save-site req))
+  (cjr/POST "/api/site/config" req
+    (auth/requires-admin server-config/api-save req))
+
+  ;; Public pages
+  (cjr/GET "/" req
+    (public/public-page req))
+
+  ;; Logged-in pages
+  (cjr/GET "/app" req
+    (auth/requires-user app/recipes-page req))
+  (cjr/GET "/app/recipes/new" req
+    (auth/requires-user app/add-page req))
+  (cjr/GET "/app/meal-plan" req
+    (auth/requires-user app/meal-plan-page req))
+  (cjr/GET "/app/pantry" req
+    (auth/requires-user app/pantry-page req))
+  (cjr/GET "/app/grocery" req
+    (auth/requires-user app/grocery-page req))
+  (cjr/GET "/app/settings" req
+    (auth/requires-user (fn [req me] (app-settings/settings-page req me nil)) req))
+  (cjr/GET "/app/settings/:tab" [tab :as req]
+    (auth/requires-user (fn [req me] (app-settings/settings-page req me tab)) req))
+
+  ; Setup is finished once this handler is reached
+  (cjr/GET "/setup" []
+    {:status 302 :headers {"Location" "/app"} :body ""})
+  ; Login page
+  (cjr/GET "/login" req
+    (if (auth/current-user req)
+      {:status 302 :headers {"Location" "/app"} :body ""}
+      (lp/login-page)))
+  ; Logout - clears session and redirects to login
+  (cjr/GET "/logout" req
+    (session/logout req))
+  ;; A function, so the page (which reads the site name from the database) is built per
+  ;; request rather than when this namespace loads.
+  (route/not-found (fn [_req] (nf/not-found-html))))
+
+(defn- on-startup
+  "Bring the database into a consistent state and start the background services."
+  []
+  (pu/create-dir (:data-root (s/get-settings)))
+  (db/get-db-spec))
+
+(defn- setup-routes
+  "The only routes served until setup is finished."
+  [req]
+  (case [(:request-method req) (:uri req)]
+    [:get "/setup"] (onboarding/setup-page)
+    [:post "/api/setup"] (locking setup-required
+                           (if @setup-required
+                             (onboarding/api-setup req (fn []
+                                                         (on-startup)
+                                                         (reset! setup-required false)))
+                             {:status 200 :headers {"HX-Redirect" "/login"} :body ""}))
+    (onboarding/setup-redirect req)))
+
+(def app
+  (let [wrap-res-fun (fn [handler] (wrap-resource handler "public"))]
+    (-> (fn [req] (if @setup-required (setup-routes req) (routes req)))
+        wrap-keyword-params
+        wrap-params
+        wrap-res-fun
+        wrap-content-type
+        wrap-cookies
+        mw/wrap-same-origin
+        mw/wrap-body-limit
+        mw/wrap-security-headers)))
+
+(defn start-server
+  "Start the web service."
+  []
+  (log/info "Larder starting up")
+  (s/pin-restart-settings!)
+  (reset! setup-required (or (not (s/configured?))
+                             (not (.exists (io/file (sqlite/db-path))))
+                             (not (users/any-users?))))
+  (if @setup-required
+    (log/info "Waiting for first-run setup")
+    (on-startup))
+  (let [settings (s/get-settings)]
+    (log/info (str "Starting on port " (:listen-port settings)))
+    (log/info (str "Settings: " settings))
+    (reset! server (jetty/run-jetty (fn [req] (app req)) {:port (:listen-port settings) :join? false}))
+    (when @setup-required
+      (let [msg (str "Open http://localhost:" (:listen-port settings) "/setup to finish setting up Larder.")]
+        (log/info msg)
+        (println msg)))))
+
+(defn stop-server
+  "Stop the web service."
+  []
+  (when-some [s @server]
+    (.stop s)
+    (reset! server nil)))

@@ -1,0 +1,116 @@
+;; Larder - a household recipe, pantry and grocery list manager.
+;; Copyright (C) 2025-2026 zauberen
+;;
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU Affero General Public License as published
+;; by the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU Affero General Public License for more details.
+;;
+;; You should have received a copy of the GNU Affero General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+(ns com.larder.middleware
+  "Ring middleware that hardens every response: cross-origin request checks, a request
+  body size limit and security headers."
+  (:require [clojure.string :as str]
+            [com.larder.uploads :as uploads])
+  (:import [java.net URI]))
+
+(def max-body-bytes
+  "Largest request body accepted, except for upload pieces (see `body-limit`)."
+  (* 1024 1024))
+
+(defn- body-limit
+  "Upload pieces may be as large as the :upload-chunk-mb setting allows."
+  [req]
+  (if (and (= :put (:request-method req)) (str/starts-with? (:uri req) "/api/uploads/"))
+    (max max-body-bytes (uploads/piece-limit))
+    max-body-bytes))
+
+(defn- default-port
+  [scheme]
+  (case scheme "https" 443 "http" 80 nil))
+
+(defn- parse-host
+  "[host port] from a Host header value such as example.com:8081 or [::1]:8081.
+  The port is nil when absent."
+  [^String host]
+  (when-not (str/blank? host)
+    (let [[_ h p] (re-matches #"(\[[^\]]*\]|[^:]*)(?::(\d+))?" (str/trim host))]
+      (when h [(str/lower-case h) (some-> p parse-long)]))))
+
+(defn- parse-origin
+  "[host port] of an Origin header, with the scheme's default port filled in."
+  [^String origin]
+  (try
+    (let [uri (URI. origin)
+          host (.getHost uri)]
+      (when host
+        [(str/lower-case host)
+         (if (neg? (.getPort uri)) (default-port (.getScheme uri)) (.getPort uri))]))
+    (catch Exception _ nil)))
+
+(defn- matches-host?
+  "True when ORIGIN ([host port]) is the host named by HOST-HEADER. A Host header
+  without a port (common behind a reverse proxy) only has to match the host name."
+  [[o-host o-port] host-header]
+  (when-let [[h-host h-port] (parse-host host-header)]
+    (and (= o-host h-host)
+         (or (nil? h-port) (= o-port h-port)))))
+
+(defn same-origin?
+  "False when REQ carries an Origin header naming another site than the one it was sent
+  to. Requests without an Origin (non-browser clients) are allowed."
+  [req]
+  (let [origin (get-in req [:headers "origin"])]
+    (or (nil? origin)
+        (when-let [o (parse-origin origin)]
+          (boolean (some #(matches-host? o %)
+                         (remove nil? [(get-in req [:headers "host"])
+                                       (get-in req [:headers "x-forwarded-host"])])))))))
+
+(def origin-exempt-paths
+  "Called by non-browser clients (Claude, OAuth clients) that authenticate with a bearer
+  token or client credentials rather than the session cookie, so a cross-site request
+  can't borrow a login."
+  #{"/mcp" "/oauth/token" "/oauth/register"})
+
+(defn wrap-same-origin
+  "Reject state-changing requests sent from other sites (CSRF). The session cookie is
+  SameSite=Strict, but other ports on the same host count as the same site, so this
+  checks the Origin too."
+  [handler]
+  (fn [req]
+    (if (and (not (#{:get :head :options} (:request-method req)))
+             (not (contains? origin-exempt-paths (:uri req)))
+             (not (same-origin? req)))
+      {:status 403 :headers {"Content-Type" "text/plain"} :body "Cross-origin request blocked."}
+      (handler req))))
+
+(defn wrap-body-limit
+  "Refuse request bodies larger than `body-limit` (by Content-Length), so
+  unauthenticated requests can't make the server buffer huge forms."
+  [handler]
+  (fn [req]
+    (let [length (some-> (get-in req [:headers "content-length"]) str/trim parse-long)]
+      (if (and length (> length max-body-bytes) (> length (body-limit req)))
+        {:status 413 :headers {"Content-Type" "text/plain"} :body "Request too large."}
+        (handler req)))))
+
+(def security-headers
+  {"X-Content-Type-Options" "nosniff"
+   "X-Frame-Options" "DENY"
+   "Content-Security-Policy" "frame-ancestors 'none'"
+   "Referrer-Policy" "same-origin"})
+
+(defn wrap-security-headers
+  "Add `security-headers` to every response that doesn't set them itself."
+  [handler]
+  (fn [req]
+    (when-let [resp (handler req)]
+      (update resp :headers #(merge security-headers %)))))
