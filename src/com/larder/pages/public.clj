@@ -17,7 +17,8 @@
 (ns com.larder.pages.public
   "The public dashboard: published recipes (and, depending on the grocery access
   setting, the grocery list). No login required."
-  (:require [com.larder.auth :as auth]
+  (:require [clojure.string :as str]
+            [com.larder.auth :as auth]
             [com.larder.global-settings :as gs]
             [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.recipe-view :as view]
@@ -60,16 +61,28 @@
       body)
      (ui/link-js-script "/js/main.js")])))
 
+(defn public-recipe-list
+  [q]
+  (let [found (recipes/search {:q q :status "published"})
+        tags (status/recipe-statuses (status/snapshot) (map :id found))]
+    [:div#recipe-list
+     (view/card-grid (for [rec found]
+                       (view/recipe-card rec {:href (str "/recipes/" (:id rec))}
+                                         (view/status-tag (tags (:id rec)) #{:ready})))
+                     (if (seq (str/trim (or q ""))) "No recipes match." "No recipes have been published yet."))]))
+
 (defn public-page
   [req]
-  (public-shell req "recipes"
-                [:h1.dashboard-title "Recipes"]
-                (let [found (recipes/search {:status "published"})
-                      tags (status/recipe-statuses (status/snapshot) (map :id found))]
-                  (view/card-grid (for [rec found]
-                                    (view/recipe-card rec {:href (str "/recipes/" (:id rec))}
-                                                      (view/status-tag (tags (:id rec)) #{:ready})))
-                                  "No recipes have been published yet."))))
+  (let [q (get-in req [:params :q])]
+    (public-shell req "recipes"
+                  [:h1.dashboard-title "Recipes"]
+                  [:form.list-filters {:action "/" :method "get"
+                                       :hx-get "/" :hx-trigger "input changed delay:300ms, change"
+                                       :hx-target "#recipe-list" :hx-select "#recipe-list" :hx-swap "outerHTML"
+                                       :hx-push-url "true" :role "search"}
+                   [:input.form-input {:type "search" :name "q" :value q :placeholder "Search recipes"
+                                       :aria-label "Search recipes"}]]
+                  (public-recipe-list q))))
 
 (defn recipe-page
   "A published recipe for visitors. Drafts are not found."

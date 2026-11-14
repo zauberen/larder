@@ -116,6 +116,11 @@
       (post sid (str "/api/recipes/" id) :form (assoc pancakes :action "publish" :title "Best pancakes"))
       (is (= "published" (:status (recipes/by-id id))))
       (is (str/includes? (:text (get-page "/")) "Best pancakes"))
+      (is (str/includes? (:text (get-page "/")) "Search recipes"))
+      (is (str/includes? (:text (get-page "/" :query "q=pancake")) "Best pancakes"))
+      (let [body (:text (get-page "/" :query "q=waffles"))]
+        (is (not (str/includes? body "Best pancakes")))
+        (is (str/includes? body "No recipes match.")))
       (let [page (get-page (str "/recipes/" id))]
         (is (= 200 (:status page)))
         (is (str/includes? (:text page) "1 cup milk"))
