@@ -88,8 +88,8 @@
 
 (defn detail-body
   "Image, description, facts, ingredients and steps. OPTS: :line-fn renders one
-  ingredient line (default: its text)."
-  [recipe & [{:keys [line-fn]}]]
+  ingredient line (default: its text); :ingredients-attrs go on the ingredients section."
+  [recipe & [{:keys [line-fn ingredients-attrs]}]]
   [:div.recipe-detail
    [:div.recipe-hero
     (when-let [src (image-url recipe)]
@@ -100,5 +100,6 @@
        (into [:div.recipe-description] (for [p (str/split d #"\n\s*\n")] [:p p])))
      (facts recipe)]]
    [:div.recipe-columns
-    [:section [:h2 "Ingredients"] (if line-fn (ingredient-list recipe line-fn) (ingredient-list recipe))]
+    [:section#recipe-ingredients (or ingredients-attrs {})
+     [:h2 "Ingredients"] (if line-fn (ingredient-list recipe line-fn) (ingredient-list recipe))]
     [:section [:h2 "Steps"] (step-list recipe)]]])

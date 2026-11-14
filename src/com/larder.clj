@@ -33,6 +33,7 @@
             [com.larder.middleware :as mw]
             [com.larder.pages.app :as app]
             [com.larder.pages.login :as lp]
+            [com.larder.pages.made :as made]
             [com.larder.pages.not-found :as nf]
             [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.ingredients :as ingredients-page]
@@ -79,6 +80,10 @@
     (auth/requires-user (fn [req user] (recipes-page/api-match-line req user id line)) req))
   (cjr/POST "/api/recipes/:id/lines/:line/create" [id line :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-create-ingredient req user id line)) req))
+  (cjr/GET "/api/recipes/:id/made" [id :as req]
+    (auth/requires-user (fn [req user] (made/api-dialog req user id)) req))
+  (cjr/POST "/api/recipes/:id/made" [id :as req]
+    (auth/requires-user (fn [req user] (made/api-made req user id)) req))
   (cjr/POST "/api/recipes/:id/grocery" [id :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-missing-to-grocery req user id)) req))
   (cjr/POST "/api/recipes/:id/lines/:line/grocery" [id line :as req]

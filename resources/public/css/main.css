@@ -766,3 +766,20 @@ textarea.form-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, mon
 .on-list { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; color: var(--accent-green); font-weight: 700; flex-shrink: 0; }
 #recipe-message:empty { display: none; }
 #recipe-message .alert { margin-bottom: 1rem; }
+
+/* Made it */
+.made-servings { max-width: 12rem; }
+.made-list { list-style: none; display: flex; flex-direction: column; }
+.made-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 0.5rem 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--border-color); }
+.made-item:last-child { border-bottom: none; }
+.made-name { display: flex; flex-direction: column; min-width: 0; }
+.made-name .muted { font-size: 0.8rem; overflow-wrap: anywhere; }
+.made-amount { flex-wrap: nowrap; }
+.made-amount .form-input { width: 5.5rem; flex: none; min-width: 0; padding: 0.35rem 0.5rem; }
+.made-amount select.form-input { width: 5.5rem; }
+.made-always { grid-column: 2 / -1; font-size: 0.85rem; }
+.ran-out { white-space: nowrap; font-size: 0.9rem; }
+@media (max-width: 560px) {
+    .made-item { grid-template-columns: 1fr auto; }
+    .made-name { grid-column: 1 / -1; }
+}

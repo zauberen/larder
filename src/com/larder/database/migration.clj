@@ -21,7 +21,7 @@
   They all run whenever `server-version` changes. Times are stored as epoch milliseconds."
   (:require [clojure.java.jdbc :as jdbc]))
 
-(def server-version "0.6.0")
+(def server-version "0.8.0")
 ;; Reset whenever this namespace is reloaded; set once check-run-migrations has run.
 (def migration-chk-ran (atom nil))
 
@@ -195,7 +195,16 @@
         "purchased_quantity real,"
         "purchased_unit text,"
         "pantry_item_id integer)")
-   "create index if not exists grocery_items_open on grocery_items (done_at, section)"])
+   "create index if not exists grocery_items_open on grocery_items (done_at, section)"
+   ;; 0.8.0: cook log. recipe_id is kept as null when the recipe is deleted, so the
+   ;; history stays; meal_plan_entry_id is set when cooked from the meal plan.
+   (str "create table if not exists cook_log ("
+        "id integer primary key autoincrement,"
+        "recipe_id integer references recipes (id) on delete set null,"
+        "meal_plan_entry_id integer,"
+        "servings real,"
+        "user_id integer references users (id) on delete set null,"
+        "cooked_at integer not null)")])
 
 (defn run-migrations
   "Initialize or update a database. No user is created: the first admin comes from onboarding."

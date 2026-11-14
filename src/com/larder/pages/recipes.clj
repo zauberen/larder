@@ -112,6 +112,7 @@
       (when-let [src (:source_url recipe)]
         [:a.source-link {:href src :target "_blank" :rel "noopener noreferrer"} "Source"])]]
     [:div.page-actions
+     [:button.btn.btn-primary {:hx-get (str "/api/recipes/" (:id recipe) "/made") :hx-target "#modal"} "Made it"]
      [:button.btn.btn-secondary {:hx-post (str "/api/recipes/" (:id recipe) "/grocery") :hx-target "#recipe-message"
                                  :hx-swap "innerHTML"}
       "Add missing to grocery list"]
@@ -127,7 +128,12 @@
                       " matched to an ingredient yet, so the pantry can't track "
                       (if (= 1 unmatched) "it" "them") ". ")
                  [:a (ui/nav-attrs (str (recipe-path (:id recipe)) "/edit")) "Review in the editor"])))
-   (view/detail-body recipe {:line-fn #(line-with-status snap (:id recipe) %)}))))
+   (view/detail-body recipe {:line-fn #(line-with-status snap (:id recipe) %)
+                             ;; Statuses follow the pantry (Made it, grocery check-offs).
+                             :ingredients-attrs {:hx-get (recipe-path (:id recipe)) :hx-select "#recipe-ingredients"
+                                                 :hx-target "this" :hx-swap "outerHTML"
+                                                 :hx-trigger "pantry-changed from:body" :hx-disinherit "*"}})
+   [:div#modal])))
 
 (defn recipe-page
   [req user id]
