@@ -122,3 +122,38 @@
                            "Choose mass"))
         (is (str/includes? (:text (post sid (str "/api/recipes/" c "/lines/" (:id line) "/match") :form {:ingredient_id "999"}))
                            "Choose an ingredient"))))))
+
+(deftest review-test
+  (let [sid (login "admin")
+        get-text (fn [uri] (tu/body-str (larder/app (tu/request :get uri :sid sid))))
+        a (recipes/create! (first (recipes/parse-form {:title "A" :ingredients "1 cup scallions\n2 dragon fruits"})) "draft" 1)
+        b (recipes/create! (first (recipes/parse-form {:title "B" :ingredients "3 scallions, sliced"})) "published" 1)
+        key-of (fn [name] (ing/match-key name))]
+    (testing "the recipe list offers the review button only while lines are unmatched"
+      (is (str/includes? (get-text "/app") "Review ingredients (3)")))
+    (testing "the review page groups lines with the same name across recipes"
+      (let [page (get-text "/app/ingredients/review")]
+        (is (str/includes? page "1 cup scallions"))
+        (is (str/includes? page "3 scallions, sliced"))
+        (is (= 2 (count (re-seq #"value=\"scallion\"" page))) "one group, two forms")))
+    (testing "creating an ingredient matches every line of the group"
+      (let [resp (post sid "/api/ingredients/review/create" :form {:key (key-of "scallions") :name "Green onion" :dimension "count"})]
+        (is (str/includes? (:text resp) "Created Green onion for 2 lines"))
+        (is (empty? (recipes/unmatched-lines b)))
+        (is (= 1 (count (recipes/unmatched-lines a))))))
+    (testing "choosing an existing ingredient matches the rest"
+      (let [lemon (ing/match "lemon")
+            resp (post sid "/api/ingredients/review/match" :form {:key (key-of "dragon fruits") :ingredient_id lemon})]
+        (is (str/includes? (:text resp) "Matched 1 line to lemon"))
+        (is (str/includes? (:text resp) "Every ingredient line is matched"))
+        (is (empty? (recipes/unmatched-lines a)))))
+    (testing "stale or bad input is refused"
+      (is (str/includes? (:text (post sid "/api/ingredients/review/match" :form {:key "scallion" :ingredient_id "1"}))
+                         "already matched"))
+      (let [c (recipes/create! (first (recipes/parse-form {:title "C" :ingredients "1 kiwi"})) "draft" 1)]
+        (is (str/includes? (:text (post sid "/api/ingredients/review/match" :form {:key "kiwi" :ingredient_id "999"}))
+                           "Choose an ingredient"))
+        (is (seq (recipes/unmatched-lines c)))))
+    (testing "the button goes away once everything is matched"
+      (post sid "/api/ingredients/review/create" :form {:key "kiwi" :name "Kiwi" :dimension "count"})
+      (is (not (str/includes? (get-text "/app") "Review ingredients"))))))
