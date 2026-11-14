@@ -140,6 +140,21 @@
   (for [row (db/run-db-query ["select * from recipe_ingredients where recipe_id = ? and ingredient_id is null order by position" id])]
     (assoc row :name (:name (ingredients/parse-line (:original_text row))))))
 
+(defn all-unmatched-lines
+  "Every recipe's lines without an ingredient, each with its parsed :name and the
+  recipe's :recipe_title, ordered by recipe title then position."
+  []
+  (for [row (db/run-db-query [(str "select ri.*, r.title as recipe_title from recipe_ingredients ri"
+                                   " join recipes r on r.id = ri.recipe_id"
+                                   " where ri.ingredient_id is null"
+                                   " order by r.title collate nocase, r.id, ri.position")])]
+    (assoc row :name (:name (ingredients/parse-line (:original_text row))))))
+
+(defn unmatched-count
+  "How many recipe lines have no ingredient."
+  []
+  (:n (first (db/run-db-query ["select count(*) as n from recipe_ingredients where ingredient_id is null"]))))
+
 (defn published-by-id
   "The published recipe with ID, or nil (drafts don't exist for visitors)."
   [id]

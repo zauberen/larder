@@ -39,6 +39,8 @@
 
 (defn recipe-path [id] (str "/app/recipes/" id))
 
+(def review-path "/app/ingredients/review")
+
 (defn- draft-badge [] [:span.badge.draft "Draft"])
 
 ;;; List
@@ -64,7 +66,14 @@
       "recipes"
       [:div.page-top
        [:h1.dashboard-title "Recipes"]
-       [:a.btn.btn-primary (ui/nav-attrs "/app/recipes/new") "New recipe"]]
+       [:div.page-actions
+        (let [n (recipes/unmatched-count)]
+          (when (pos? n)
+            [:a.btn.btn-secondary (merge (ui/nav-attrs review-path)
+                                         {:title (str n (if (= 1 n) " ingredient line needs" " ingredient lines need")
+                                                      " matching")})
+             (str "Review ingredients (" n ")")]))
+        [:a.btn.btn-primary (ui/nav-attrs "/app/recipes/new") "New recipe"]]]
       [:form.list-filters {:hx-get "/app" :hx-trigger "input changed delay:300ms, change"
                            :hx-target "#recipe-list" :hx-select "#recipe-list" :hx-swap "outerHTML"
                            :hx-push-url "true" :role "search"}
@@ -260,6 +269,109 @@
               (ingredients/rematch-unmatched!)
               (r/h-respond (picker-section (u/parse-int recipe-id)
                                            {:kind :success :text (str "Created " (:name new-ing) ".")}))))))
+
+;;; Reviewing every recipe's unmatched lines
+
+(defn- group-key
+  "Lines whose names compare equal are reviewed together; a line without a name alone."
+  [{:keys [id name]}]
+  (let [k (ingredients/match-key name)]
+    (if (str/blank? k) (str "#" id) k)))
+
+(defn- review-groups
+  "Every unmatched line, grouped by name: [{:key :name :unit :lines}], A–Z."
+  []
+  (->> (recipes/all-unmatched-lines)
+       (group-by group-key)
+       (map (fn [[k lines]] {:key k :name (:name (first lines)) :unit (some :unit lines) :lines lines}))
+       (sort-by (comp str/lower-case #(or % "") :name))))
+
+(defn review-section
+  "Every recipe's unmatched lines grouped by name, each group with a choice of an
+  existing ingredient or a new one."
+  [& [message]]
+  (let [groups (review-groups)
+        options (cons ["" "Choose an ingredient…"] (map (juxt :id :name) (ingredients/all)))
+        target {:hx-target "#review-lines" :hx-swap "outerHTML"}]
+    [:section#review-lines.card.picker-card
+     (ui/message-alert message)
+     (if (empty? groups)
+       [:p.muted "Every ingredient line is matched. " [:a (ui/nav-attrs "/app") "Back to recipes"]]
+       (list
+        [:p.muted "These lines don't match an ingredient yet. Choose the ingredient each one means "
+         "(its name is remembered for next time) or create a new one. Lines with the same name are "
+         "matched together."]
+        (into [:ul.picker-list]
+              (for [{:keys [key name unit lines]} groups
+                    :let [label (or (not-empty name) (:original_text (first lines)))]]
+                [:li.picker-row
+                 [:div.picker-line
+                  (into [:ul.review-lines]
+                        (for [{:keys [original_text recipe_id recipe_title]} lines]
+                          [:li [:code original_text] " "
+                           [:a.muted (ui/nav-attrs (recipe-path recipe_id)) recipe_title]]))]
+                 [:form.inline-form (merge {:hx-post "/api/ingredients/review/match"} target)
+                  [:input {:type "hidden" :name "key" :value key}]
+                  (ui/select "ingredient_id" options nil {:required true :aria-label (str "Ingredient for " label)})
+                  [:button.btn.btn-secondary.small {:type "submit"} "Use"]]
+                 [:form.inline-form (merge {:hx-post "/api/ingredients/review/create"} target)
+                  [:input {:type "hidden" :name "key" :value key}]
+                  [:input.form-input {:name "name" :value name :required true :maxlength 100
+                                      :aria-label (str "New ingredient name for " label)}]
+                  (ui/select "dimension" [["mass" "Weighed"] ["volume" "Measured"] ["count" "Counted"]]
+                             (ingredients/guess-dimension unit) {:aria-label "Measured by"})
+                  [:button.btn.btn-secondary.small {:type "submit"} "Create"]]]))))]))
+
+(defn review-page
+  [req user]
+  (layout/app-page
+   req user
+   (layout/main
+    "recipes"
+    [:div.page-top
+     [:h1.dashboard-title.compact "Review ingredients"]
+     [:a.btn.btn-secondary (ui/nav-attrs "/app") "Back to recipes"]]
+    (review-section))))
+
+(defn- review-group
+  [key]
+  (first (filter #(= key (:key %)) (review-groups))))
+
+(defn- match-group!
+  "Match every line of GROUP to ingredient ING-ID, remembering the group's name as an alias."
+  [group ing-id]
+  (ingredients/add-alias! ing-id (:name group))
+  (doseq [line (:lines group)] (recipes/set-line-ingredient! (:id line) ing-id))
+  (ingredients/rematch-unmatched!))
+
+(defn- lines-text [group]
+  (let [n (count (:lines group))] (str n (if (= 1 n) " line" " lines"))))
+
+(defn api-review-match
+  "Use an existing ingredient for every unmatched line in a review group."
+  [req _user]
+  (let [group (review-group (get-in req [:params :key]))
+        ing (ingredients/by-id (u/parse-int (get-in req [:params :ingredient_id])))]
+    (cond
+      (nil? group) (r/h-respond (review-section {:kind :info :text "Those lines are already matched."}))
+      (nil? ing) (r/h-respond (review-section {:kind :error :text "Choose an ingredient."}))
+      :else (do (match-group! group (:id ing))
+                (r/h-respond (review-section {:kind :success
+                                              :text (str "Matched " (lines-text group) " to " (:name ing) ".")}))))))
+
+(defn api-review-create
+  "Create an ingredient for every unmatched line in a review group."
+  [req _user]
+  (let [{:keys [key name dimension]} (:params req)
+        group (review-group key)
+        new-ing {:name (str/trim (or name "")) :dimension dimension}
+        errors (ingredients/validate new-ing)]
+    (cond
+      (nil? group) (r/h-respond (review-section {:kind :info :text "Those lines are already matched."}))
+      (seq errors) (r/h-respond (review-section {:kind :error :text (str/join " " errors)}))
+      :else (do (match-group! group (ingredients/create! new-ing))
+                (r/h-respond (review-section {:kind :success
+                                              :text (str "Created " (:name new-ing) " for " (lines-text group) ".")}))))))
 
 ;;; Editor
 

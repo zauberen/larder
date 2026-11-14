@@ -85,6 +85,10 @@
     (auth/requires-user (fn [req user] (recipes-page/api-match-line req user id line)) req))
   (cjr/POST "/api/recipes/:id/lines/:line/create" [id line :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-create-ingredient req user id line)) req))
+  (cjr/POST "/api/ingredients/review/match" req
+    (auth/requires-user recipes-page/api-review-match req))
+  (cjr/POST "/api/ingredients/review/create" req
+    (auth/requires-user recipes-page/api-review-create req))
   (cjr/GET "/api/recipes/:id/made" [id :as req]
     (auth/requires-user (fn [req user] (made/api-dialog req user id)) req))
   (cjr/POST "/api/recipes/:id/made" [id :as req]
@@ -208,6 +212,8 @@
     (auth/requires-user mealplan-page/meal-plan-page req))
   (cjr/GET "/app/pantry" req
     (auth/requires-user pantry-page/pantry-page req))
+  (cjr/GET "/app/ingredients/review" req
+    (auth/requires-user recipes-page/review-page req))
   (cjr/GET "/app/ingredients/:id/edit" [id :as req]
     (auth/requires-user (fn [req user] (ingredients-page/dialog-page req user id)) req))
   (cjr/GET "/app/grocery" req

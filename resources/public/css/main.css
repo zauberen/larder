@@ -690,6 +690,8 @@ textarea.form-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, mon
 .picker-row:last-child { border-bottom: none; padding-bottom: 0; }
 .picker-row .inline-form { flex-wrap: wrap; }
 .picker-row select.form-input { width: auto; flex: 1; min-width: 10rem; }
+.review-lines { list-style: none; display: flex; flex-direction: column; gap: 0.25rem; }
+.review-lines a { font-size: 0.9rem; margin-left: 0.25rem; }
 
 /* Add page */
 .add-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; max-width: 1000px; }
