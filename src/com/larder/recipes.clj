@@ -167,6 +167,11 @@
 
 ;;; Writing
 
+(defn title-keys
+  "Every recipe's title, lower case and trimmed (to spot repeated imports)."
+  []
+  (into #{} (map #(str/lower-case (str/trim (:title %)))) (db/run-db-query ["select title from recipes"])))
+
 (defn- write-children!
   "Replace the tags and ingredient lines of recipe ID."
   [tx id {:keys [tags lines]}]

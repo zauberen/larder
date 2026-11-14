@@ -23,6 +23,7 @@
             [com.larder.auth :as auth]
             [com.larder.images :as images]
             [com.larder.import.core :as importer]
+            [com.larder.import.tandoor]
             [com.larder.import.web]
             [com.larder.grocery :as grocery]
             [com.larder.ingredients :as ingredients]
@@ -428,10 +429,47 @@
 
 ;;; Add and import
 
+(def max-tandoor-bytes
+  "Largest Tandoor export accepted."
+  (* 500 1024 1024))
+
+(defn- tandoor-result
+  "What a Tandoor import did: {:imported [{:id :title :warnings}] :skipped [title] :failed [why]}."
+  [{:keys [imported skipped failed]}]
+  (list
+   (ui/alert (if (seq imported) (if (seq failed) :info :success) :error)
+             (str/join " " (remove nil?
+                                   [(case (count imported)
+                                      0 "No recipes were imported."
+                                      1 "Imported 1 recipe, published."
+                                      (str "Imported " (count imported) " recipes, published."))
+                                    (when (seq skipped)
+                                      (str (count skipped) " already in Larder "
+                                           (if (= 1 (count skipped)) "was" "were") " skipped."))
+                                    (when (seq failed)
+                                      (str (count failed) " couldn't be read."))])))
+   (when (seq imported)
+     [:details.import-results {:open (<= (count imported) 10)}
+      [:summary "Imported recipes"]
+      (into [:ul]
+            (for [{:keys [id title warnings]} imported]
+              [:li [:a (ui/nav-attrs (recipe-path id)) title]
+               (when (seq warnings) [:span.form-hint " " (str/join " " warnings)])]))])
+   (when (seq skipped)
+     [:details.import-results
+      [:summary "Skipped (already in Larder)"]
+      (into [:ul] (for [t skipped] [:li t]))])
+   (when (seq failed)
+     [:details.import-results {:open true}
+      [:summary "Couldn't be read"]
+      (into [:ul] (for [f failed] [:li f]))])))
+
 (defn add-main
-  "The Add page: start a blank recipe or import one from a web page. On a failed import
-  URL is kept and, when the page has no recipe data, a blank editor is offered with it."
-  [& [{:keys [url message offer-blank?]}]]
+  "The Add page: start a blank recipe, import one from a web page or import a Tandoor
+  export. On a failed web import URL is kept and, when the page has no recipe data, a
+  blank editor is offered with it. TANDOOR is {:message} or {:result} after an export
+  was imported."
+  [& [{:keys [url message offer-blank? tandoor]}]]
   (layout/main
    "add"
    [:h1.dashboard-title "Add a recipe"]
@@ -453,7 +491,26 @@
     [:section.card.add-choice
      [:div.card-header [:h2 "New recipe"]]
      [:p.muted "Type a recipe in yourself. Save it as a draft until it's ready to publish."]
-     [:a.btn.btn-secondary (ui/nav-attrs "/app/recipes/new?blank=1") "Start a blank recipe"]]]))
+     [:a.btn.btn-secondary (ui/nav-attrs "/app/recipes/new?blank=1") "Start a blank recipe"]]
+    [:section.card.add-choice
+     [:div.card-header [:h2 "Import from Tandoor"]]
+     [:p.muted "In Tandoor, open Export, choose the Tandoor format and your recipes, and upload the zip "
+      "it gives you. Every recipe is saved, published, with its image, keywords as tags and "
+      "working and waiting time as prep and cook time."]
+     (ui/message-alert (:message tandoor))
+     (when-let [result (:result tandoor)] (tandoor-result result))
+     [:form.form.tandoor-form {:hx-post "/api/recipes/import/tandoor" :hx-target "#main" :hx-swap "outerHTML"
+                               :data-upload "/api/uploads" :data-upload-kind "tandoor"}
+      [:input.form-input {:type "file" :accept ".zip,application/zip" :data-upload-file true :required true
+                          :aria-label "Tandoor export"}]
+      [:input {:type "hidden" :name "tandoor_upload" :data-upload-id true}]
+      [:label.checkbox
+       [:input {:type "checkbox" :name "skip_existing" :value "1" :checked true}]
+       [:span "Skip recipes whose name is already in Larder"]]
+      [:div.upload-status {:hidden true}
+       [:progress.upload-progress {:max 100}]
+       [:span.upload-status-text.form-hint {:role "status" :aria-live "polite"}]]
+      [:button.btn.btn-primary {:type "submit"} [:span.when-idle "Import export"] [:span.when-busy "Importing…"]]]]]))
 
 (defn new-page
   "/app/recipes/new: the choice, or with ?blank=1 the editor (source_url may be prefilled)."
@@ -480,11 +537,56 @@
                                   :message {:kind :error :text (or user-message "The import failed.")}
                                   :offer-blank? no-recipe})))))))
 
+(defn- title-key
+  [title]
+  (some-> title str/trim not-empty str/lower-case))
+
+(defn import-all!
+  "Save every recipe of an importer's result for USER. With SKIP-EXISTING? a recipe whose
+  title is already used is skipped. Returns {:imported [{:id :title :warnings}]
+  :skipped [title] :failed [why]}."
+  [items user skip-existing?]
+  (let [existing (when skip-existing? (recipes/title-keys))]
+    (reduce
+     (fn [acc item]
+       (let [title (get-in item [:recipe :title])]
+         (cond
+           (:failed item) (update acc :failed conj (:failed item))
+           (and skip-existing? (contains? existing (title-key title))) (update acc :skipped conj title)
+           :else (try
+                   (let [{:keys [id warnings]} (importer/save! item (:id user))]
+                     (update acc :imported conj {:id id :title (:title (recipes/by-id id)) :warnings warnings}))
+                   (catch Exception e
+                     (log/warn e "Saving an imported recipe failed:" title)
+                     (update acc :failed conj (str (or title "A recipe") ": It couldn't be saved.")))))))
+     {:imported [] :skipped [] :failed []}
+     items)))
+
+(defn api-import-tandoor
+  "Import every recipe of the uploaded Tandoor export and list what happened."
+  [req user]
+  (let [params (:params req)
+        upload-id (some-> (u/single (:tandoor_upload params)) str str/trim not-empty)
+        skip? (= "1" (u/single (:skip_existing params)))
+        respond #(r/h-respond (add-main {:tandoor %}))]
+    (if-not upload-id
+      (respond {:message {:kind :error :text "Choose the Tandoor export (a .zip file) first."}})
+      (try
+        (let [{:keys [^java.io.File file]} (uploads/take! upload-id (:id user))]
+          (try
+            (respond {:result (import-all! (importer/import-source {:kind :tandoor :file file}) user skip?)})
+            (finally (.delete file))))
+        (catch clojure.lang.ExceptionInfo e
+          (let [msg (:user-message (ex-data e))]
+            (when-not msg (log/warn e "Tandoor import failed"))
+            (respond {:message {:kind :error :text (or msg "The import failed.")}})))))))
+
 ;;; Uploads and images
 
 (def upload-kinds
   "Upload kind -> largest file accepted."
-  {"image" images/max-bytes})
+  {"image" images/max-bytes
+   "tandoor" max-tandoor-bytes})
 
 (defn- upload-error
   [status msg]

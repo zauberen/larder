@@ -23,7 +23,9 @@
      :image    {:bytes byte-array} or nil
      :warnings [\"...\"]}                     ; shown after import
 
-  `import-source` dispatches on the source's :kind (:web now, :tandoor later). `save!`
+  or {:failed \"why\"} for a recipe of a multi-recipe source that couldn't be read.
+
+  `import-source` dispatches on the source's :kind (:web, :tandoor). `save!`
   stores what an importer returned, published, through the same parser and matcher as
   typed recipes."
   (:require [clojure.string :as str]

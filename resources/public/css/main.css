@@ -671,6 +671,10 @@ textarea.form-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, mon
 .add-choice { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
 .add-choice .muted { line-height: 1.5; }
 .add-choice .inline-form, .add-choice .alert { width: 100%; margin: 0; }
+.add-choice .tandoor-form { width: 100%; gap: 0.75rem; }
+.import-results { width: 100%; }
+.import-results summary { cursor: pointer; font-weight: 600; }
+.import-results ul { margin: 0.5rem 0 0; padding-left: 1.25rem; line-height: 1.6; max-height: 20rem; overflow-y: auto; }
 .when-busy { display: none; }
 .htmx-request .when-busy, .htmx-request.when-busy { display: inline; }
 .htmx-request .when-idle { display: none; }

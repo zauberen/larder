@@ -75,9 +75,7 @@ The shell and styles come from [Block Shipper](https://github.com/zauberen/block
 
 ### Roadmap
 
-Done: shell, recipes, ingredients and units, web import, pantry, grocery list, pantry status, Made it, meal plan, MCP with API keys, MCP with OAuth.
-
-Next: import from a Tandoor export.
+Done: shell, recipes, ingredients and units, web import, pantry, grocery list, pantry status, Made it, meal plan, MCP with API keys, MCP with OAuth, Tandoor import.
 
 ## License
 
