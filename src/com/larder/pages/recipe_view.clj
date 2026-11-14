@@ -80,17 +80,18 @@
       [:p.muted "No steps written yet."])))
 
 (defn detail-body
-  "Image, description, facts, ingredients and steps. EXTRA-META goes beside the rating."
-  [recipe & extra-meta]
+  "Image, description, facts, ingredients and steps. OPTS: :line-fn renders one
+  ingredient line (default: its text)."
+  [recipe & [{:keys [line-fn]}]]
   [:div.recipe-detail
    [:div.recipe-hero
     (when-let [src (image-url recipe)]
       [:img.recipe-image {:src src :alt ""}])
     [:div.recipe-summary
-     (into [:div.recipe-meta (stars (:rating recipe))] extra-meta)
+     [:div.recipe-meta (stars (:rating recipe))]
      (when-let [d (:description recipe)]
        (into [:div.recipe-description] (for [p (str/split d #"\n\s*\n")] [:p p])))
      (facts recipe)]]
    [:div.recipe-columns
-    [:section [:h2 "Ingredients"] (ingredient-list recipe)]
+    [:section [:h2 "Ingredients"] (if line-fn (ingredient-list recipe line-fn) (ingredient-list recipe))]
     [:section [:h2 "Steps"] (step-list recipe)]]])

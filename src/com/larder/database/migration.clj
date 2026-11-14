@@ -15,15 +15,79 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 (ns com.larder.database.migration
-  "Idempotent schema migrations. Every statement in `migrations` must be safe to run
-  again (create ... if not exists, alter table add column, which fails harmlessly with
-  a duplicate column error). They all run whenever `server-version` changes.
-  Times are stored as epoch milliseconds."
+  "Idempotent schema migrations. Every entry in `migrations` must be safe to run again
+  (create ... if not exists, alter table add column, which fails harmlessly with a
+  duplicate column error, or a function of the db-spec that checks before it writes).
+  They all run whenever `server-version` changes. Times are stored as epoch milliseconds."
   (:require [clojure.java.jdbc :as jdbc]))
 
-(def server-version "0.2.0")
+(def server-version "0.3.0")
 ;; Reset whenever this namespace is reloaded; set once check-run-migrations has run.
 (def migration-chk-ran (atom nil))
+
+(def seed-ingredient-rows
+  "[name dimension density aliases] for the common ingredients created once at setup.
+  Densities are typical values in grams per millilitre (flour spooned, brown sugar packed)."
+  [["flour" "mass" 0.53 ["all-purpose flour" "plain flour" "white flour"]]
+   ["bread flour" "mass" 0.55 []]
+   ["whole wheat flour" "mass" 0.51 ["wholemeal flour"]]
+   ["sugar" "mass" 0.85 ["granulated sugar" "white sugar" "caster sugar"]]
+   ["brown sugar" "mass" 0.93 ["light brown sugar" "dark brown sugar"]]
+   ["powdered sugar" "mass" 0.56 ["icing sugar" "confectioners sugar"]]
+   ["butter" "mass" 0.911 ["unsalted butter" "salted butter"]]
+   ["salt" "mass" 1.2 ["table salt" "fine salt"]]
+   ["kosher salt" "mass" 0.54 []]
+   ["baking powder" "mass" 0.9 []]
+   ["baking soda" "mass" 0.92 ["bicarbonate of soda"]]
+   ["cocoa powder" "mass" 0.42 ["unsweetened cocoa powder" "cocoa"]]
+   ["cornstarch" "mass" 0.54 ["corn starch" "cornflour"]]
+   ["cornmeal" "mass" 0.65 []]
+   ["rice" "mass" 0.85 ["white rice" "long grain rice"]]
+   ["rolled oats" "mass" 0.41 ["oats" "old-fashioned oats"]]
+   ["quinoa" "mass" 0.72 []]
+   ["lentils" "mass" 0.85 ["dried lentils"]]
+   ["breadcrumbs" "mass" 0.45 ["bread crumbs" "panko"]]
+   ["chocolate chips" "mass" 0.72 []]
+   ["honey" "mass" 1.42 []]
+   ["peanut butter" "mass" 1.09 []]
+   ["parmesan" "mass" 0.42 ["grated parmesan" "parmesan cheese"]]
+   ["cheddar" "mass" 0.45 ["shredded cheddar" "cheddar cheese"]]
+   ["cream cheese" "mass" 1.0 []]
+   ["yogurt" "mass" 1.03 ["plain yogurt" "greek yogurt" "yoghurt"]]
+   ["tomato paste" "mass" 1.1 []]
+   ["milk" "volume" 1.03 ["whole milk"]]
+   ["heavy cream" "volume" 0.99 ["whipping cream" "double cream"]]
+   ["sour cream" "volume" 1.0 []]
+   ["water" "volume" 1.0 []]
+   ["olive oil" "volume" 0.91 ["extra virgin olive oil" "extra-virgin olive oil"]]
+   ["vegetable oil" "volume" 0.92 ["canola oil" "neutral oil"]]
+   ["maple syrup" "volume" 1.32 []]
+   ["vinegar" "volume" 1.01 ["white vinegar"]]
+   ["soy sauce" "volume" 1.15 []]
+   ["lemon juice" "volume" 1.03 []]
+   ["chicken broth" "volume" 1.0 ["chicken stock"]]
+   ["vanilla extract" "volume" 0.88 ["vanilla"]]
+   ["ketchup" "volume" 1.14 []]
+   ["mayonnaise" "volume" 0.91 ["mayo"]]
+   ["egg" "count" nil ["large egg"]]
+   ["garlic" "count" nil ["garlic clove"]]
+   ["onion" "count" nil ["yellow onion"]]
+   ["lemon" "count" nil []]])
+
+(defn seed-ingredients!
+  "Create `seed-ingredient-rows` once. A flag in global_settings remembers that it ran,
+  so ingredients deleted afterwards don't come back with the next migration."
+  [db-spec]
+  (when (empty? (jdbc/query db-spec ["select 1 from global_settings where key = 'ingredients_seeded'"]))
+    (jdbc/with-db-transaction [tx db-spec]
+      (let [t (System/currentTimeMillis)]
+        (doseq [[name dimension density aliases] seed-ingredient-rows]
+          (jdbc/execute! tx ["insert or ignore into ingredients (name, dimension, density, created_at, modified_at) values (?, ?, ?, ?, ?)"
+                             name dimension density t t])
+          (let [id (:id (first (jdbc/query tx ["select id from ingredients where name = ?" name])))]
+            (doseq [a aliases]
+              (jdbc/execute! tx ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" id a]))))
+        (jdbc/execute! tx ["insert or ignore into global_settings (key, value) values ('ingredients_seeded', '1')"])))))
 
 (def migrations
   [(str "create table if not exists db_version ("
@@ -78,14 +142,35 @@
    (str "create table if not exists recipe_tags ("
         "recipe_id integer not null references recipes (id) on delete cascade,"
         "tag text not null,"
-        "primary key (recipe_id, tag))")])
+        "primary key (recipe_id, tag))")
+   ;; 0.3.0: ingredients. dimension is mass, volume or count; density is grams per
+   ;; millilitre and lets mass and volume convert. Names and aliases are unique ignoring
+   ;; case; the matcher also ignores plurals (see ingredients/match-key).
+   (str "create table if not exists ingredients ("
+        "id integer primary key autoincrement,"
+        "name text not null unique collate nocase,"
+        "dimension text not null default 'count',"
+        "density real,"
+        "default_quantity real,"
+        "default_unit text,"
+        "always_have integer not null default 0,"
+        "created_at integer not null,"
+        "modified_at integer not null)")
+   (str "create table if not exists ingredient_aliases ("
+        "id integer primary key autoincrement,"
+        "ingredient_id integer not null references ingredients (id) on delete cascade,"
+        "alias text not null unique collate nocase)")
+   "create index if not exists recipe_ingredients_ingredient on recipe_ingredients (ingredient_id)"
+   #'seed-ingredients!])
 
 (defn run-migrations
   "Initialize or update a database. No user is created: the first admin comes from onboarding."
   [db-spec]
   (doseq [migration migrations]
     (try
-      (jdbc/execute! db-spec [migration])
+      (if (string? migration)
+        (jdbc/execute! db-spec [migration])
+        (migration db-spec))
       (catch Exception e
         ;; Ignore duplicate column errors from alter table statements
         (when-not (re-find #"(?i)duplicate column" (.getMessage e))

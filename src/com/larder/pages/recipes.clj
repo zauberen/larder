@@ -22,6 +22,7 @@
             [clojure.tools.logging :as log]
             [com.larder.auth :as auth]
             [com.larder.images :as images]
+            [com.larder.ingredients :as ingredients]
             [com.larder.pages.layout :as layout]
             [com.larder.pages.recipe-view :as view]
             [com.larder.recipes :as recipes]
@@ -67,6 +68,13 @@
 
 ;;; Detail
 
+(defn line-with-match
+  "A recipe line, flagged when it isn't matched to an ingredient."
+  [line]
+  (list (:original_text line)
+        (when-not (:ingredient_id line)
+          (list " " [:span.badge.unmatched {:title "Not matched to an ingredient"} "Not matched"]))))
+
 (defn detail-main
   [recipe & [message]]
   (layout/main
@@ -85,13 +93,90 @@
                               :hx-confirm (str "Delete " (:title recipe) "? This can't be undone.")}
       "Delete"]]]
    (ui/message-alert message)
-   (view/detail-body recipe)))
+   (let [unmatched (count (remove :ingredient_id (:ingredients recipe)))]
+     (when (pos? unmatched)
+       (ui/alert :info
+                 (str unmatched (if (= 1 unmatched) " ingredient line isn't" " ingredient lines aren't")
+                      " matched to an ingredient yet, so the pantry can't track "
+                      (if (= 1 unmatched) "it" "them") ". ")
+                 [:a (ui/nav-attrs (str (recipe-path (:id recipe)) "/edit")) "Review in the editor"])))
+   (view/detail-body recipe {:line-fn line-with-match})))
 
 (defn recipe-page
   [req user id]
   (if-let [recipe (recipes/by-id (u/parse-int id))]
     (layout/app-page req user (detail-main recipe))
     (auth/not-found)))
+
+;;; Unmatched ingredient picker
+
+(defn picker-section
+  "The unmatched lines of saved recipe RECIPE-ID, each with a choice of an existing
+  ingredient or a new one."
+  [recipe-id & [message]]
+  (let [lines (recipes/unmatched-lines recipe-id)
+        options (cons ["" "Choose an ingredient…"] (map (juxt :id :name) (ingredients/all)))
+        target {:hx-target "#unmatched-lines" :hx-swap "outerHTML"}]
+    [:section#unmatched-lines.card.picker-card
+     (cond
+       (seq lines)
+       (list
+        [:div.card-header [:h2 "Match ingredients"]]
+        [:p.muted "These lines don't match an ingredient yet. Choose the ingredient each one means "
+         "(its name is remembered for next time) or create a new one."]
+        (ui/message-alert message)
+        (into [:ul.picker-list]
+              (for [{:keys [id name unit original_text]} lines
+                    :let [api (str "/api/recipes/" recipe-id "/lines/" id)]]
+                [:li.picker-row
+                 [:div.picker-line [:code original_text]]
+                 [:form.inline-form (merge {:hx-post (str api "/match")} target)
+                  (ui/select "ingredient_id" options nil {:required true :aria-label (str "Ingredient for " original_text)})
+                  [:button.btn.btn-secondary.small {:type "submit"} "Use"]]
+                 [:form.inline-form (merge {:hx-post (str api "/create")} target)
+                  [:input.form-input {:name "name" :value name :required true :maxlength 100
+                                      :aria-label (str "New ingredient name for " original_text)}]
+                  (ui/select "dimension" [["mass" "Weighed"] ["volume" "Measured"] ["count" "Counted"]]
+                             (ingredients/guess-dimension unit) {:aria-label "Measured by"})
+                  [:button.btn.btn-secondary.small {:type "submit"} "Create"]]])))
+       message (ui/message-alert message)
+       :else nil)]))
+
+(defn- line-of
+  [recipe-id line-id]
+  (first (filter #(= (u/parse-int line-id) (:id %)) (recipes/unmatched-lines (u/parse-int recipe-id)))))
+
+(defn api-match-line
+  "Use an existing ingredient for an unmatched line; its parsed name becomes an alias."
+  [req _user recipe-id line-id]
+  (let [line (line-of recipe-id line-id)
+        ing (ingredients/by-id (u/parse-int (get-in req [:params :ingredient_id])))]
+    (cond
+      (nil? line) (r/h-respond (picker-section (u/parse-int recipe-id) {:kind :info :text "That line is already matched."}))
+      (nil? ing) (r/h-respond (picker-section (u/parse-int recipe-id) {:kind :error :text "Choose an ingredient."}))
+      :else (do (ingredients/add-alias! (:id ing) (:name line))
+                (recipes/set-line-ingredient! (:id line) (:id ing))
+                (ingredients/rematch-unmatched!)
+                (r/h-respond (picker-section (u/parse-int recipe-id)
+                                             {:kind :success :text (str "Matched to " (:name ing) ".")}))))))
+
+(defn api-create-ingredient
+  "Create an ingredient for an unmatched line. If it is named differently from the line,
+  the line's name becomes an alias."
+  [req _user recipe-id line-id]
+  (let [line (line-of recipe-id line-id)
+        {:keys [name dimension]} (:params req)
+        new-ing {:name (str/trim (or name "")) :dimension dimension}
+        errors (ingredients/validate new-ing)]
+    (cond
+      (nil? line) (r/h-respond (picker-section (u/parse-int recipe-id) {:kind :info :text "That line is already matched."}))
+      (seq errors) (r/h-respond (picker-section (u/parse-int recipe-id) {:kind :error :text (str/join " " errors)}))
+      :else (let [id (ingredients/create! new-ing)]
+              (ingredients/add-alias! id (:name line))
+              (recipes/set-line-ingredient! (:id line) id)
+              (ingredients/rematch-unmatched!)
+              (r/h-respond (picker-section (u/parse-int recipe-id)
+                                           {:kind :success :text (str "Created " (:name new-ing) ".")}))))))
 
 ;;; Editor
 
@@ -154,6 +239,7 @@
       [:h1.dashboard-title.compact (if new? "New recipe" (str "Edit " (:title recipe)))]
       (when-not new?
         [:a.btn.btn-secondary (ui/nav-attrs (recipe-path (:id recipe))) "Cancel"])]
+     (when-not new? (picker-section (:id recipe)))
      [:form.form.recipe-editor {:hx-post (if new? "/api/recipes" (str "/api/recipes/" (:id recipe)))
                                 :hx-target "#main" :hx-swap "outerHTML"
                                 :data-upload "/api/uploads" :data-upload-kind "image"}

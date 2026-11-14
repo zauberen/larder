@@ -21,6 +21,7 @@
   (:require [clojure.java.jdbc :as jdbc]
             [clojure.string :as str]
             [com.larder.database.db :as db]
+            [com.larder.ingredients :as ingredients]
             [com.larder.util :as u])
   (:import (java.net URI)))
 
@@ -123,12 +124,21 @@
          (into {} (map (fn [[k rows]] [k (mapv :tag rows)]))))))
 
 (defn by-id
-  "The recipe with ID with its :tags and :ingredients, or nil."
+  "The recipe with ID with its :tags and :ingredients, or nil. Each ingredient row also
+  has :ingredient_name (nil when the line is unmatched)."
   [id]
   (when-let [recipe (first (db/run-db-query ["select * from recipes where id = ?" id]))]
     (assoc recipe
            :tags (get (tags-by-recipe [id]) id [])
-           :ingredients (db/run-db-query ["select * from recipe_ingredients where recipe_id = ? order by position" id]))))
+           :ingredients (db/run-db-query [(str "select ri.*, i.name as ingredient_name from recipe_ingredients ri"
+                                               " left join ingredients i on i.id = ri.ingredient_id"
+                                               " where ri.recipe_id = ? order by ri.position") id]))))
+
+(defn unmatched-lines
+  "Recipe ID's lines without an ingredient, each with its parsed :name."
+  [id]
+  (for [row (db/run-db-query ["select * from recipe_ingredients where recipe_id = ? and ingredient_id is null order by position" id])]
+    (assoc row :name (:name (ingredients/parse-line (:original_text row))))))
 
 (defn published-by-id
   "The published recipe with ID, or nil (drafts don't exist for visitors)."
@@ -164,9 +174,12 @@
   (jdbc/execute! tx ["delete from recipe_ingredients where recipe_id = ?" id])
   (doseq [tag tags]
     (jdbc/execute! tx ["insert into recipe_tags (recipe_id, tag) values (?, ?)" id tag]))
-  (doseq [[i line] (map-indexed vector lines)]
-    (jdbc/execute! tx ["insert into recipe_ingredients (recipe_id, position, original_text) values (?, ?, ?)"
-                       id i line])))
+  (let [index (ingredients/name-index)]
+    (doseq [[i line] (map-indexed vector lines)
+            :let [{:keys [ingredient_id quantity unit note original_text]} (ingredients/resolve-line line index)]]
+      (jdbc/execute! tx [(str "insert into recipe_ingredients (recipe_id, position, ingredient_id, quantity, unit, note, original_text)"
+                              " values (?, ?, ?, ?, ?, ?, ?)")
+                         id i ingredient_id quantity unit note original_text]))))
 
 (def ^:private columns [:title :description :servings :prep_minutes :cook_minutes :steps :source_url :rating])
 
@@ -193,6 +206,11 @@
                                   ", status = ?, modified_at = ? where id = ?")]
                             (concat (map recipe columns) [status (u/now-ms) id])))
     (write-children! tx id recipe)))
+
+(defn set-line-ingredient!
+  "Match recipe line LINE-ID to ingredient ING-ID."
+  [line-id ing-id]
+  (db/exe-db-stmt ["update recipe_ingredients set ingredient_id = ? where id = ?" ing-id line-id]))
 
 (defn set-image!
   "Set recipe ID's image file name (nil removes it). Returns the previous name."

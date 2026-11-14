@@ -70,6 +70,10 @@
     (auth/requires-user recipes-page/api-create req))
   (cjr/POST "/api/recipes/:id" [id :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-update req user id)) req))
+  (cjr/POST "/api/recipes/:id/lines/:line/match" [id line :as req]
+    (auth/requires-user (fn [req user] (recipes-page/api-match-line req user id line)) req))
+  (cjr/POST "/api/recipes/:id/lines/:line/create" [id line :as req]
+    (auth/requires-user (fn [req user] (recipes-page/api-create-ingredient req user id line)) req))
   (cjr/POST "/api/recipes/:id/delete" [id :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-delete req user id)) req))
   ;; Files (recipe images) sent in pieces under the request body limit.
