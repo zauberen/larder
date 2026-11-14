@@ -30,11 +30,13 @@
             [com.larder.auth :as auth]
             [com.larder.database.db :as db]
             [com.larder.database.sqlite :as sqlite]
+            [com.larder.mcp :as mcp]
             [com.larder.middleware :as mw]
             [com.larder.pages.login :as lp]
             [com.larder.pages.made :as made]
             [com.larder.pages.mealplan :as mealplan-page]
             [com.larder.pages.not-found :as nf]
+            [com.larder.pages.connect :as connect]
             [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.ingredients :as ingredients-page]
             [com.larder.pages.onboarding :as onboarding]
@@ -129,6 +131,14 @@
     (auth/requires-user grocery-page/api-add-store req))
   (cjr/POST "/api/stores/:id/delete" [id :as req]
     (auth/requires-user (fn [req user] (grocery-page/api-delete-store req user id)) req))
+  (cjr/POST "/api/keys" req
+    (auth/requires-user connect/api-create-key req))
+  (cjr/POST "/api/keys/:id/revoke" [id :as req]
+    (auth/requires-user (fn [req me] (connect/api-revoke-own req me id)) req))
+  (cjr/POST "/api/site/mcp" req
+    (auth/requires-admin connect/api-save-mcp req))
+  (cjr/POST "/api/site/keys/:id/revoke" [id :as req]
+    (auth/requires-admin (fn [req me] (connect/api-revoke-any req me id)) req))
   (cjr/POST "/api/site/grocery-access" req
     (auth/requires-admin grocery-page/api-save-access req))
   (cjr/POST "/api/site/grocery-link" req
@@ -151,6 +161,10 @@
     (auth/requires-admin app-settings/api-save-site req))
   (cjr/POST "/api/site/config" req
     (auth/requires-admin server-config/api-save req))
+
+  ;; MCP: bearer tokens only, no cookies (see com.larder.mcp).
+  (cjr/ANY "/mcp" req
+    (mcp/handler req))
 
   ;; Public pages
   (cjr/GET "/" req

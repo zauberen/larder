@@ -149,8 +149,9 @@
   Unconvertible needs add the ingredient once at its default purchase size when it is
   neither in stock nor listed; unmatched lines become misc items. Returns
   {:added n :covered n}."
-  [from to user-id]
-  (let [snap (status/snapshot)
+  [from to user-id & [origin]]
+  (let [origin (or origin "mealplan")
+        snap (status/snapshot)
         {:keys [ingredients unmatched]} (needs snap (entries-between from to))
         results
         (vec
@@ -163,7 +164,7 @@
              (if (or (seq rows) (seq listed))
                :covered
                (do (grocery/add-ingredient! {:ingredient_id ing-id :quantity (:default_quantity ing)
-                                             :unit (:default_unit ing) :origin "mealplan" :added_by user-id})
+                                             :unit (:default_unit ing) :origin origin :added_by user-id})
                    :added))
              (let [{:keys [quantity unit]} need
                    density (:density ing)
@@ -173,12 +174,12 @@
                (if (or (<= net 1e-9) (pos? unknown-stock) (pos? unknown-list))
                  :covered
                  (do (grocery/add-ingredient! {:ingredient_id ing-id :quantity net :unit unit
-                                               :origin "mealplan" :added_by user-id})
+                                               :origin origin :added_by user-id})
                      :added))))))
         misc (vec (for [text (distinct unmatched)]
                     (if (grocery/open-misc-text? text)
                       :covered
-                      (do (grocery/add-misc! {:text text :origin "mealplan" :added_by user-id}) :added))))
+                      (do (grocery/add-misc! {:text text :origin origin :added_by user-id}) :added))))
         all (concat results misc)]
     {:added (count (filter #{:added} all))
      :covered (count (filter #{:covered} all))}))

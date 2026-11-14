@@ -21,7 +21,7 @@
   They all run whenever `server-version` changes. Times are stored as epoch milliseconds."
   (:require [clojure.java.jdbc :as jdbc]))
 
-(def server-version "0.9.0")
+(def server-version "0.10.0")
 ;; Reset whenever this namespace is reloaded; set once check-run-migrations has run.
 (def migration-chk-ran (atom nil))
 
@@ -214,7 +214,18 @@
         "servings real,"
         "position integer not null default 0,"
         "cooked_at integer)")
-   "create index if not exists meal_plan_entries_date on meal_plan_entries (date, position)"])
+   "create index if not exists meal_plan_entries_date on meal_plan_entries (date, position)"
+   ;; 0.10.0: API keys for the MCP endpoint. A key is lk_<key_id>_<secret>; key_id is
+   ;; stored in the clear to find the row, key_hash is the SHA-256 of the whole key.
+   (str "create table if not exists api_keys ("
+        "id integer primary key autoincrement,"
+        "user_id integer not null references users (id) on delete cascade,"
+        "name text not null,"
+        "key_id text not null unique,"
+        "key_hash text not null,"
+        "last_used_at integer,"
+        "created_at integer not null,"
+        "revoked_at integer)")])
 
 (defn run-migrations
   "Initialize or update a database. No user is created: the first admin comes from onboarding."

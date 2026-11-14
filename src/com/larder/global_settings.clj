@@ -31,7 +31,10 @@
    "public_base_url" ""
    ;; Who can view and check off the grocery list without logging in: open (anyone,
    ;; with a tab on the public dashboard), share (anyone with /g/<token>), login.
-   "grocery_access" "share"})
+   "grocery_access" "share"
+   ;; MCP sign-in methods, "1" on, "0" off.
+   "mcp_api_keys" "1"
+   "mcp_oauth" "1"})
 
 (defn all-settings
   "Every site setting as a map of string key to string value, defaults included."
@@ -101,3 +104,8 @@
   [t]
   (boolean (and (string? t) (seq t)
                 (MessageDigest/isEqual (.getBytes ^String (share-token) "UTF-8") (.getBytes ^String t "UTF-8")))))
+
+(defn enabled?
+  "True when the on/off setting K is on."
+  [k]
+  (= "1" (get-setting k)))

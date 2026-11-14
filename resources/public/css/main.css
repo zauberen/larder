@@ -848,3 +848,8 @@ textarea.form-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, mon
     .mp-layout { grid-template-columns: 1fr; }
     .mp-servings-label { position: static; width: auto; height: auto; clip: auto; }
 }
+
+/* API keys */
+.new-key { display: flex; flex-direction: column; gap: 0.6rem; margin: 1rem 0; }
+.new-key h3, .subhead { font-size: 0.95rem; margin-top: 0.75rem; }
+.subhead { margin: 1.25rem 0 0.5rem; }

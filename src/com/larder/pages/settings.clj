@@ -19,6 +19,7 @@
   (:require [clojure.string :as str]
             [com.larder.auth :as auth]
             [com.larder.global-settings :as gs]
+            [com.larder.pages.connect :as connect]
             [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.layout :as layout]
             [com.larder.pages.server-config :as server-config]
@@ -30,6 +31,7 @@
 (def tab-defs
   "[key label admin-only?]"
   [["account" "My account" false]
+   ["keys" "API keys" false]
    ["users" "Users" true]
    ["site" "Site" true]])
 
@@ -231,5 +233,6 @@
         [:div.tab-body.settings-layout
          (case tab
            "account" (account-card me)
+           "keys" (connect/keys-card req me)
            "users" (users-card me)
-           "site" (list (site-card) (grocery-page/access-card req) (server-config/config-card)))])))))
+           "site" (list (site-card) (grocery-page/access-card req) (connect/mcp-card) (server-config/config-card)))])))))
