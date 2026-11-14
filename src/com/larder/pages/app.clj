@@ -30,10 +30,6 @@
   [req user]
   (placeholder req user "meal-plan" "Meal plan" "Nothing planned yet."))
 
-(defn pantry-page
-  [req user]
-  (placeholder req user "pantry" "Pantry" "The pantry is empty."))
-
 (defn grocery-page
   [req user]
   (placeholder req user "grocery" "Grocery" "The grocery list is empty."))

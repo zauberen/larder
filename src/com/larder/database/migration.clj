@@ -21,7 +21,7 @@
   They all run whenever `server-version` changes. Times are stored as epoch milliseconds."
   (:require [clojure.java.jdbc :as jdbc]))
 
-(def server-version "0.3.0")
+(def server-version "0.5.0")
 ;; Reset whenever this namespace is reloaded; set once check-run-migrations has run.
 (def migration-chk-ran (atom nil))
 
@@ -161,7 +161,18 @@
         "ingredient_id integer not null references ingredients (id) on delete cascade,"
         "alias text not null unique collate nocase)")
    "create index if not exists recipe_ingredients_ingredient on recipe_ingredients (ingredient_id)"
-   #'seed-ingredients!])
+   #'seed-ingredients!
+   ;; 0.5.0: pantry. One row per purchase or manual entry, so the date added is kept;
+   ;; stock for an ingredient is the sum of its rows. quantity is null when unknown.
+   (str "create table if not exists pantry_items ("
+        "id integer primary key autoincrement,"
+        "ingredient_id integer not null references ingredients (id) on delete cascade,"
+        "quantity real,"
+        "unit text,"
+        "added_at integer not null,"
+        "source text not null default 'manual',"
+        "added_by integer references users (id) on delete set null)")
+   "create index if not exists pantry_items_ingredient on pantry_items (ingredient_id, added_at)"])
 
 (defn run-migrations
   "Initialize or update a database. No user is created: the first admin comes from onboarding."

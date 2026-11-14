@@ -194,3 +194,39 @@
                     (inc n))
                 n))
             0 rows)))
+
+;;; Editing
+
+(defn find-or-create!
+  "The id of the ingredient called NAME, creating it (dimension guessed from UNIT) when
+  no name or alias matches. Returns [id created?], or nil for a blank name."
+  [name unit]
+  (let [name (str/trim (or name ""))]
+    (when (seq name)
+      (if-let [id (match name)]
+        [id false]
+        [(create! {:name name :dimension (guess-dimension unit)}) true]))))
+
+(defn update!
+  "Save the edit form's fields for ingredient ID."
+  [id {:keys [name dimension density default_quantity default_unit always_have]}]
+  (db/exe-db-stmt [(str "update ingredients set name = ?, dimension = ?, density = ?, default_quantity = ?,"
+                        " default_unit = ?, always_have = ?, modified_at = ? where id = ?")
+                   (str/trim name) dimension density default_quantity (when default_quantity default_unit)
+                   (if always_have 1 0) (u/now-ms) id]))
+
+(defn alias-errors
+  "Errors for giving ingredient ID the ALIASES."
+  [id aliases]
+  (vec (for [a aliases
+             :let [other (match a)]
+             :when (and other (not= other id))]
+         (str "\"" a "\" already names another ingredient."))))
+
+(defn set-aliases!
+  "Replace ingredient ID's aliases."
+  [id aliases]
+  (jdbc/with-db-transaction [tx (db/get-db-spec)]
+    (jdbc/execute! tx ["delete from ingredient_aliases where ingredient_id = ?" id])
+    (doseq [a (distinct (map str/trim aliases)) :when (seq a)]
+      (jdbc/execute! tx ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" id a]))))

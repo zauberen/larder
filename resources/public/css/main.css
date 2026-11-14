@@ -674,3 +674,29 @@ textarea.form-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, mon
 .when-busy { display: none; }
 .htmx-request .when-busy, .htmx-request.when-busy { display: inline; }
 .htmx-request .when-idle { display: none; }
+
+/* Pantry */
+.link-button { background: none; border: none; padding: 0; font: inherit; color: var(--text-primary); cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: var(--border-color); text-underline-offset: 3px; }
+.link-button:hover { color: var(--accent-green); text-decoration-color: currentColor; }
+.badge.always { background: rgba(74, 222, 128, 0.12); color: var(--accent-green); margin-left: 0.4rem; }
+.badge.source { background: var(--bg-tertiary); color: var(--text-secondary); }
+.nowrap { white-space: nowrap; }
+.select-cell { width: 2.25rem; }
+.select-cell input { width: 1.05rem; height: 1.05rem; accent-color: var(--accent-green); }
+.pantry-table td { vertical-align: middle; }
+.qty-input { width: 6.5rem; padding: 0.35rem 0.5rem; }
+.unit-input { width: auto; min-width: 5.5rem; padding: 0.35rem 0.5rem; }
+.form-input[aria-invalid=true] { border-color: var(--accent-red); }
+.add-row { margin-bottom: 1.5rem; }
+.add-row-fields { display: grid; grid-template-columns: minmax(12rem, 2fr) minmax(6rem, 1fr) minmax(6rem, 1fr) auto; gap: 0.75rem; align-items: end; }
+.add-row .form-hint { display: block; margin-top: 0.6rem; }
+.date-filter { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); }
+.date-filter .form-input { width: auto; }
+@media (max-width: 700px) {
+    .add-row-fields { grid-template-columns: 1fr 1fr; }
+    .add-row-fields > :first-child { grid-column: 1 / -1; }
+}
+
+/* Dialogs */
+.bs-dialog.wide-dialog { width: min(560px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.bs-dialog .form { max-width: none; }

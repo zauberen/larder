@@ -37,9 +37,54 @@ function bsMarkSection() {
     });
 }
 
+// Selections: a checkbox with data-select-all="NAME" toggles every checkbox named NAME;
+// a button with data-selection-action="NAME" is shown while any is checked. Its
+// data-confirm-template ({n}, {rows}) becomes the hx-confirm of its form.
+function bsUpdateSelection() {
+    document.querySelectorAll('[data-selection-action]').forEach(btn => {
+        const name = btn.dataset.selectionAction;
+        const boxes = [...document.querySelectorAll(`input[type=checkbox][name="${name}"]`)];
+        const n = boxes.filter(b => b.checked).length;
+        btn.hidden = n === 0;
+        btn.textContent = `Delete ${n} selected`;
+        const tmpl = btn.dataset.confirmTemplate;
+        if (tmpl && btn.form) {
+            btn.form.setAttribute('hx-confirm', tmpl.replace('{n}', n).replace('{rows}', n === 1 ? 'item' : 'items'));
+        }
+        document.querySelectorAll(`[data-select-all="${name}"]`).forEach(all => {
+            all.checked = n > 0 && n === boxes.length;
+            all.indeterminate = n > 0 && n < boxes.length;
+        });
+    });
+}
+document.addEventListener('change', evt => {
+    const all = evt.target.closest('[data-select-all]');
+    if (all) {
+        document.querySelectorAll(`input[type=checkbox][name="${all.dataset.selectAll}"]`)
+            .forEach(b => { b.checked = all.checked; });
+    }
+    if (all || (evt.target.type === 'checkbox' && evt.target.name)) bsUpdateSelection();
+});
+
+// Dialogs loaded into #modal (dialog[data-modal]) open as modals; [data-close-modal]
+// closes them, and a closed dialog is removed.
+function bsOpenModals(root) {
+    root.querySelectorAll('dialog[data-modal]').forEach(d => {
+        if (d.open) return;
+        d.addEventListener('close', () => d.remove());
+        d.showModal();
+    });
+}
+document.addEventListener('click', evt => {
+    const btn = evt.target.closest('[data-close-modal]');
+    if (btn) btn.closest('dialog').close();
+});
+
 function bsInit(root) {
     bsRevealActiveTab(root);
     bsMarkSection();
+    bsUpdateSelection();
+    bsOpenModals(root);
 }
 
 // Copy buttons (event delegation, so swapped-in buttons work too).

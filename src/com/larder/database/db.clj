@@ -38,6 +38,13 @@
   [stmt]
   (jdbc/execute! (get-db-spec) stmt))
 
+(defn insert!
+  "Execute the insert STMT and return the new row's id."
+  [stmt]
+  (jdbc/with-db-transaction [tx (get-db-spec)]
+    (jdbc/execute! tx stmt)
+    (:id (first (jdbc/query tx ["select last_insert_rowid() as id"])))))
+
 (def session-ttl-seconds
   "How long a login lasts."
   (* 30 24 60 60))

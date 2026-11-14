@@ -111,3 +111,9 @@
         (> frac 0.995) (str (inc whole))
         match (if (zero? whole) match (str whole match))
         :else (-> (format "%.2f" q) (str/replace #"0+$" "") (str/replace #"\.$" ""))))))
+
+(defn input-qty
+  "A quantity for a number input: no trailing zeros, at most three decimals."
+  [q]
+  (when q
+    (-> (format "%.3f" (double q)) (str/replace #"0+$" "") (str/replace #"\.$" ""))))

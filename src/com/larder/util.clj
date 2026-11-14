@@ -62,3 +62,21 @@
   "The first value of a form parameter that may have been sent more than once."
   [v]
   (if (sequential? v) (first v) v))
+
+(defn format-date
+  "Format epoch millis TS as a local date (2026-11-13), or a dash when nil."
+  [ts]
+  (if ts
+    (str (.toLocalDate (java.time.LocalDateTime/ofInstant (java.time.Instant/ofEpochMilli ts)
+                                                          (java.time.ZoneId/systemDefault))))
+    "—"))
+
+(defn day-start-ms
+  "Epoch millis at the start of local date ISO-DATE (2026-11-13), or nil when invalid."
+  [iso-date]
+  (try
+    (-> (java.time.LocalDate/parse (str iso-date))
+        (.atStartOfDay (java.time.ZoneId/systemDefault))
+        .toInstant
+        .toEpochMilli)
+    (catch Exception _ nil)))

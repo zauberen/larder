@@ -34,7 +34,9 @@
             [com.larder.pages.app :as app]
             [com.larder.pages.login :as lp]
             [com.larder.pages.not-found :as nf]
+            [com.larder.pages.ingredients :as ingredients-page]
             [com.larder.pages.onboarding :as onboarding]
+            [com.larder.pages.pantry :as pantry-page]
             [com.larder.pages.public :as public]
             [com.larder.pages.recipes :as recipes-page]
             [com.larder.pages.server-config :as server-config]
@@ -78,6 +80,15 @@
     (auth/requires-user (fn [req user] (recipes-page/api-create-ingredient req user id line)) req))
   (cjr/POST "/api/recipes/:id/delete" [id :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-delete req user id)) req))
+  ;; Pantry and ingredients
+  (cjr/POST "/api/pantry" req
+    (auth/requires-user pantry-page/api-add req))
+  (cjr/POST "/api/pantry/delete" req
+    (auth/requires-user pantry-page/api-delete req))
+  (cjr/POST "/api/pantry/:id" [id :as req]
+    (auth/requires-user (fn [req user] (pantry-page/api-update req user id)) req))
+  (cjr/POST "/api/ingredients/:id" [id :as req]
+    (auth/requires-user (fn [req user] (ingredients-page/api-save req user id)) req))
   ;; Files (recipe images) sent in pieces under the request body limit.
   (cjr/POST "/api/uploads" req
     (auth/requires-user recipes-page/api-upload-start req))
@@ -117,7 +128,9 @@
   (cjr/GET "/app/meal-plan" req
     (auth/requires-user app/meal-plan-page req))
   (cjr/GET "/app/pantry" req
-    (auth/requires-user app/pantry-page req))
+    (auth/requires-user pantry-page/pantry-page req))
+  (cjr/GET "/app/ingredients/:id/edit" [id :as req]
+    (auth/requires-user (fn [req user] (ingredients-page/dialog-page req user id)) req))
   (cjr/GET "/app/grocery" req
     (auth/requires-user app/grocery-page req))
   (cjr/GET "/app/settings" req
