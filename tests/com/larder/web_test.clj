@@ -81,6 +81,11 @@
         (is (str/starts-with? body "<main"))
         (is (str/includes? body "data-section=\"pantry\""))
         (is (not (str/includes? body "sidebar")))))
+    (testing "phones open on the sidebar at /app only, and every page has the menu button"
+      (is (str/includes? (:text (get-page "/app" :sid sid)) "<body class=\"nav-open\""))
+      (let [body (:text (get-page "/app/meal-plan" :sid sid))]
+        (is (not (str/includes? body "nav-open")))
+        (is (str/includes? body "data-toggle-nav"))))
     (testing "the header shows the username and the site name"
       (let [body (:text (get-page "/app" :sid sid))]
         (is (str/includes? body "cook"))

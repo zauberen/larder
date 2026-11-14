@@ -37,6 +37,19 @@ function bsMarkSection() {
     });
 }
 
+// Phones show either the sidebar or the page (body.nav-open). The menu button toggles;
+// choosing an entry, or anything else that swaps #main, shows the page.
+document.addEventListener('click', evt => {
+    if (evt.target.closest('[data-toggle-nav]')) {
+        document.body.classList.toggle('nav-open');
+    } else if (evt.target.closest('.sidebar .nav-button, .header .app-logo')) {
+        document.body.classList.remove('nav-open');
+    }
+});
+document.addEventListener('htmx:afterSwap', evt => {
+    if (evt.detail.target && evt.detail.target.id === 'main') document.body.classList.remove('nav-open');
+});
+
 // Selections: a checkbox with data-select-all="NAME" toggles every checkbox named NAME;
 // a button with data-selection-action="NAME" is shown while any is checked. Its
 // data-confirm-template ({n}, {rows}) becomes the hx-confirm of its form.

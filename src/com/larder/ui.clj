@@ -81,6 +81,10 @@
   (stroke-icon "header-icon"
                "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.5-2.4 3.75-5.4 3.75-9S14.5 5.4 12 3m0 18c-2.5-2.4-3.75-5.4-3.75-9S9.5 5.4 12 3M3.6 9h16.8M3.6 15h16.8"))
 
+(defn menu-icon
+  []
+  (stroke-icon "header-icon" "M4 6h16M4 12h16M4 18h16"))
+
 (defn add-icon
   []
   (stroke-icon "nav-icon" "M12 6v6m0 0v6m0-6h6m-6 0H6"))

@@ -93,6 +93,26 @@ body {
     color: var(--accent-red);
 }
 
+/* Opens the sidebar on phones (see the 768px media query). */
+.menu-button {
+    display: none;
+    align-items: center;
+    background: transparent;
+    border: none;
+    padding: 0.25rem;
+    margin-right: 0.5rem;
+    cursor: pointer;
+}
+
+.menu-button:hover .header-icon,
+body.nav-open .menu-button .header-icon {
+    color: var(--accent-green);
+}
+
+.header .app-logo {
+    margin-right: auto;
+}
+
 /* Sidebar */
 .sidebar {
     position: fixed;
@@ -344,14 +364,20 @@ body {
         display: none;
     }
 
-    /* On the home page the sidebar is the navigation: show it full width instead of the dashboard. */
-    body:has(#main.home-content) .sidebar {
+    /* The sidebar and the page take turns: with nav-open (the menu button, or a fresh
+       load of /app) the sidebar fills the screen; picking an entry shows the page. */
+    .menu-button {
+        display: flex;
+    }
+
+    body.nav-open .sidebar {
         transform: none;
         width: 100%;
         border-right: none;
+        z-index: 50;
     }
 
-    body:has(#main.home-content) #main {
+    body.nav-open #main {
         display: none;
     }
 

@@ -67,12 +67,22 @@
 (defn header
   [user]
   [:header.header
+   [:button.menu-button {:type "button" :data-toggle-nav "" :title "Menu" :aria-label "Menu"}
+    (ui/menu-icon)]
    [:a.app-logo (ui/nav-attrs "/app") (ui/app-logo-icon) [:span (gs/site-name)]]
    [:div.user-section
     [:span.username (:username user)]
     [:a {:href "/" :title "Public dashboard"} (ui/globe-icon)]
     [:a (merge (ui/nav-attrs "/app/settings") {:title "Settings"}) (ui/settings-icon)]
     [:a {:href "/logout" :title "Log out"} (ui/logout-icon)]]])
+
+(defn- start-with-nav?
+  "On phones the sidebar and the page can't both show. A full page load of the
+  plain recipe list (where signing in lands) opens on the sidebar so the user
+  picks where to go; any other page opens on its content."
+  [req]
+  (and (contains? #{"/app" "/app/"} (:uri req))
+       (str/blank? (:query-string req))))
 
 (defn app-page
   "Respond with CONTENT (a `main` element) inside the app shell. htmx navigation
@@ -85,7 +95,7 @@
      (ui/std-header
       (gs/site-name)
       (ui/link-stylesheet "/css/main.css")
-      [:body
+      [:body (when (start-with-nav? req) {:class "nav-open"})
        (header user)
        (sidebar (section-for-path (:uri req)))
        content
