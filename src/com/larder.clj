@@ -31,9 +31,9 @@
             [com.larder.database.db :as db]
             [com.larder.database.sqlite :as sqlite]
             [com.larder.middleware :as mw]
-            [com.larder.pages.app :as app]
             [com.larder.pages.login :as lp]
             [com.larder.pages.made :as made]
+            [com.larder.pages.mealplan :as mealplan-page]
             [com.larder.pages.not-found :as nf]
             [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.ingredients :as ingredients-page]
@@ -90,6 +90,17 @@
     (auth/requires-user (fn [req user] (recipes-page/api-line-to-grocery req user id line)) req))
   (cjr/POST "/api/recipes/:id/delete" [id :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-delete req user id)) req))
+  ;; Meal plan
+  (cjr/POST "/api/meal-plan/entries" req
+    (auth/requires-user mealplan-page/api-add req))
+  (cjr/POST "/api/meal-plan/entries/:id/move" [id :as req]
+    (auth/requires-user (fn [req user] (mealplan-page/api-move req user id)) req))
+  (cjr/POST "/api/meal-plan/entries/:id/servings" [id :as req]
+    (auth/requires-user (fn [req user] (mealplan-page/api-servings req user id)) req))
+  (cjr/POST "/api/meal-plan/entries/:id/delete" [id :as req]
+    (auth/requires-user (fn [req user] (mealplan-page/api-delete req user id)) req))
+  (cjr/POST "/api/meal-plan/grocery" req
+    (auth/requires-user mealplan-page/api-grocery req))
   ;; Pantry and ingredients
   (cjr/POST "/api/pantry" req
     (auth/requires-user pantry-page/api-add req))
@@ -163,7 +174,7 @@
   (cjr/GET "/app/recipes/:id/edit" [id :as req]
     (auth/requires-user (fn [req user] (recipes-page/edit-page req user id)) req))
   (cjr/GET "/app/meal-plan" req
-    (auth/requires-user app/meal-plan-page req))
+    (auth/requires-user mealplan-page/meal-plan-page req))
   (cjr/GET "/app/pantry" req
     (auth/requires-user pantry-page/pantry-page req))
   (cjr/GET "/app/ingredients/:id/edit" [id :as req]

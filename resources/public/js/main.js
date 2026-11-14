@@ -373,6 +373,86 @@ document.addEventListener('htmx:responseError', evt => {
     }
 });
 
+// A search box with data-filter-list="#list" hides the list's items whose
+// data-filter-text doesn't contain what was typed.
+document.addEventListener('input', evt => {
+    const box = evt.target.closest('[data-filter-list]');
+    if (!box) return;
+    const q = box.value.trim().toLowerCase();
+    document.querySelectorAll(`${box.dataset.filterList} [data-filter-text]`).forEach(item => {
+        item.hidden = q !== '' && !item.dataset.filterText.includes(q);
+    });
+});
+
+// Meal plan: drag a recipe ([data-recipe-id]) or a planned entry ([data-entry-id]) onto
+// a day ([data-day]). On touch screens, tap a recipe and then a day. The server answers
+// with the day cell(s) to swap in.
+let bsPicked = null;
+function bsPlan(day, payload) {
+    const cell = document.getElementById('day-' + day);
+    if (!cell) return;
+    const [url, values] = payload.entry
+        ? [`/api/meal-plan/entries/${payload.entry}/move`, { date: day }]
+        : ['/api/meal-plan/entries', { recipe_id: payload.recipe, date: day }];
+    htmx.ajax('POST', url, { target: cell, swap: 'outerHTML', values });
+}
+function bsClearPick() {
+    document.querySelectorAll('.mp-recipe.picked').forEach(e => e.classList.remove('picked'));
+    document.querySelectorAll('.mp-calendar.picking').forEach(e => e.classList.remove('picking'));
+    bsPicked = null;
+}
+document.addEventListener('dragstart', evt => {
+    const el = evt.target.closest ? evt.target : evt.target.parentElement;
+    const entry = el && el.closest('[data-entry-id]');
+    const recipe = el && el.closest('[data-recipe-id]');
+    if (!recipe && !entry) return;
+    const payload = entry ? { entry: entry.dataset.entryId } : { recipe: recipe.dataset.recipeId };
+    evt.dataTransfer.setData('application/x-larder-plan', JSON.stringify(payload));
+    evt.dataTransfer.effectAllowed = entry ? 'move' : 'copy';
+});
+document.addEventListener('dragover', evt => {
+    const day = evt.target.closest && evt.target.closest('[data-day]');
+    if (!day || !evt.dataTransfer.types.includes('application/x-larder-plan')) return;
+    evt.preventDefault();
+    document.querySelectorAll('.mp-day.drop-target').forEach(d => { if (d !== day) d.classList.remove('drop-target'); });
+    day.classList.add('drop-target');
+});
+document.addEventListener('dragleave', evt => {
+    const day = evt.target.closest && evt.target.closest('[data-day]');
+    if (day && !day.contains(evt.relatedTarget)) day.classList.remove('drop-target');
+});
+document.addEventListener('drop', evt => {
+    const day = evt.target.closest && evt.target.closest('[data-day]');
+    const data = evt.dataTransfer.getData('application/x-larder-plan');
+    if (!day || !data) return;
+    evt.preventDefault();
+    day.classList.remove('drop-target');
+    bsPlan(day.dataset.day, JSON.parse(data));
+});
+document.addEventListener('click', evt => {
+    const recipe = evt.target.closest('.mp-recipe[data-recipe-id]');
+    if (recipe) {
+        const again = bsPicked === recipe.dataset.recipeId;
+        bsClearPick();
+        if (!again) {
+            bsPicked = recipe.dataset.recipeId;
+            recipe.classList.add('picked');
+            document.querySelectorAll('.mp-calendar').forEach(c => c.classList.add('picking'));
+        }
+        return;
+    }
+    const day = evt.target.closest('[data-day]');
+    if (day && bsPicked && !evt.target.closest('a, button, input, select')) {
+        bsPlan(day.dataset.day, { recipe: bsPicked });
+        bsClearPick();
+    }
+});
+document.addEventListener('keydown', evt => {
+    if (evt.key === 'Escape' && bsPicked) bsClearPick();
+    const recipe = evt.target.closest && evt.target.closest('.mp-recipe[data-recipe-id]');
+    if (recipe && (evt.key === 'Enter' || evt.key === ' ')) { evt.preventDefault(); recipe.click(); }
+});
+
 // Swapped elements may replace their target, so rescan the document (init is idempotent).
 document.addEventListener('htmx:afterSettle', () => bsInit(document));
 document.addEventListener('htmx:historyRestore', () => bsInit(document));

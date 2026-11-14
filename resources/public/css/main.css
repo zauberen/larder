@@ -783,3 +783,68 @@ textarea.form-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, mon
     .made-item { grid-template-columns: 1fr auto; }
     .made-name { grid-column: 1 / -1; }
 }
+
+/* Meal plan */
+.mp-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.mp-bar { position: sticky; top: 0; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem; max-height: calc(100dvh - 160px); overflow-y: auto; }
+.mp-recipes { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
+.mp-recipe { display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-start; padding: 0.55rem 0.7rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); cursor: grab; user-select: none; }
+.mp-recipe:hover, .mp-recipe:focus-visible { border-color: var(--accent-green); outline: none; }
+.mp-recipe.picked { border-color: var(--accent-green); background: rgba(74, 222, 128, 0.1); }
+.mp-recipe[hidden] { display: none; }
+.mp-recipe-title { font-weight: 500; font-size: 0.9rem; overflow-wrap: anywhere; }
+.mp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.mp-nav, .mp-views { display: flex; gap: 0.35rem; }
+.mp-views .tab { padding: 0.35rem 0.8rem; border-radius: 6px; }
+.mp-views .tab.active { background: var(--bg-tertiary); }
+.mp-title { font-size: 1.15rem; }
+.mp-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.mp-actions .btn { display: inline-flex; align-items: center; gap: 0.4rem; }
+.mp-actions .nav-icon { width: 16px; height: 16px; }
+.mp-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.5rem; }
+.mp-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); text-align: center; }
+.mp-day { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.5rem; min-height: 9rem; display: flex; flex-direction: column; gap: 0.4rem; transition: border-color 0.15s, background 0.15s; min-width: 0; }
+.mp-grid.month .mp-day { min-height: 6.5rem; }
+.mp-day.today { border-color: var(--accent-green); }
+.mp-day.outside { opacity: 0.5; }
+.mp-day.drop-target, .mp-calendar.picking .mp-day:hover { border-color: var(--accent-green); background: rgba(74, 222, 128, 0.08); }
+.mp-calendar.picking .mp-day { cursor: copy; }
+.mp-day-label { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); }
+.mp-day.today .mp-date { color: var(--accent-green); font-weight: 700; }
+.mp-grid.month .mp-weekday { display: none; }
+.mp-entries { display: flex; flex-direction: column; gap: 0.4rem; }
+.mp-entry { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.4rem 0.5rem; cursor: grab; display: flex; flex-direction: column; gap: 0.35rem; }
+.mp-entry.cooked { opacity: 0.7; }
+.mp-entry-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.25rem; }
+.mp-entry-title { color: var(--text-primary); text-decoration: none; font-size: 0.85rem; font-weight: 500; overflow-wrap: break-word; hyphens: auto; min-width: 0; }
+.mp-entry-title:hover { color: var(--accent-green); }
+.mp-remove { width: 1.4rem; height: 1.4rem; font-size: 1rem; flex-shrink: 0; }
+.mp-entry-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; font-size: 0.75rem; }
+.mp-entry-meta .badge { font-size: 0.66rem; border-radius: 6px; line-height: 1.3; }
+.badge.cooked { background: rgba(74, 222, 128, 0.15); color: var(--accent-green); }
+.mp-servings { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-muted); }
+.mp-servings .form-input { width: 3.2rem; padding: 0.15rem 0.3rem; font-size: 0.75rem; }
+.mp-made { padding: 0.15rem 0.5rem; font-size: 0.72rem; }
+.mp-grid.month .mp-servings, .mp-grid.month .mp-made { display: none; }
+.mp-drop-hint { margin-top: auto; font-size: 0.7rem; color: var(--text-muted); text-align: center; opacity: 0; transition: opacity 0.15s; }
+.mp-day.drop-target .mp-drop-hint, .mp-calendar.picking .mp-day:hover .mp-drop-hint { opacity: 1; }
+@media (max-width: 1200px) {
+    .mp-layout { grid-template-columns: 1fr; }
+    .mp-bar { position: static; max-height: 16rem; }
+    .mp-grid.week { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
+@media (max-width: 700px) {
+    .mp-grid.month, .mp-weekdays { gap: 0.2rem; }
+    .mp-grid.month .mp-day { padding: 0.25rem; min-height: 4.5rem; }
+    .mp-grid.month .mp-entry { padding: 0.2rem 0.3rem; }
+    .mp-grid.month .mp-entry-meta { display: none; }
+}
+
+@media (max-width: 1600px) {
+    .mp-layout { grid-template-columns: 220px minmax(0, 1fr); }
+    .mp-servings-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+}
+@media (max-width: 1200px) {
+    .mp-layout { grid-template-columns: 1fr; }
+    .mp-servings-label { position: static; width: auto; height: auto; clip: auto; }
+}

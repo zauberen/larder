@@ -78,6 +78,8 @@
                                                              :added_by user-id})))
                                out))
                   0)]
+      (when entry-id
+        (db/exe-db-stmt ["update meal_plan_entries set cooked_at = ? where id = ?" (u/now-ms) entry-id]))
       {:log-id (log! {:recipe-id recipe-id :entry-id entry-id :servings servings :user-id user-id})
        :ran-out (vec out)
        :added-to-grocery added})))
