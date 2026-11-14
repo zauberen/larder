@@ -31,7 +31,7 @@
 (def tab-defs
   "[key label admin-only?]"
   [["account" "My account" false]
-   ["keys" "API keys" false]
+   ["keys" "Claude" false]
    ["users" "Users" true]
    ["site" "Site" true]])
 
@@ -233,6 +233,6 @@
         [:div.tab-body.settings-layout
          (case tab
            "account" (account-card me)
-           "keys" (connect/keys-card req me)
+           "keys" (list (connect/keys-card req me) (connect/connections-card req me))
            "users" (users-card me)
            "site" (list (site-card) (grocery-page/access-card req) (connect/mcp-card) (server-config/config-card)))])))))

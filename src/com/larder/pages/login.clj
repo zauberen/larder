@@ -20,20 +20,21 @@
             [com.larder.global-settings :as gs]))
 
 (defn login-page
-  "Returns the login page as a ring response."
-  []
+  "Returns the login page as a ring response. NEXT is where to go after logging in."
+  [& [next]]
   (r/h-respond
    (ui/std-header
     (gs/site-name)
     (ui/link-stylesheet "/css/login.css")
     [:body
-     [:div.login-container {:hx-get "/api/null" :hx-trigger "load" :hx-push-url "/login" :hx-swap "none"}
+     [:div.login-container {:hx-get "/api/null" :hx-trigger "load" :hx-push-url (if next (str "/login?next=" (java.net.URLEncoder/encode (str next) "UTF-8")) "/login") :hx-swap "none"}
       [:h1.app-name (gs/site-name)]
       [:div#error-message.error-message "Username or password incorrect"]
       [:form#login-form {:hx-post "/api/login"
                          :hx-target "#login-form"
                          :hx-swap "outerHTML"
                          :hx-indicator "#login-button"}
+       (when next [:input {:type "hidden" :name "next" :value next}])
        [:div.form-group
         [:label.form-label {:for "username"}
          "Username"]

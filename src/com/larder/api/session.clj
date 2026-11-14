@@ -56,14 +56,19 @@
   (str cookie-name "=" sid "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" db/session-ttl-seconds
        (when (https? req) "; Secure")))
 
+(defn safe-next
+  "NEXT when it is a path on this site (so login can't redirect elsewhere), else /app."
+  [next]
+  (if (and (string? next) (re-matches #"/(?![/\\])[^\s]*" next)) next "/app"))
+
 (defn login-success
-  "Returns the login success response."
-  [req session]
+  "Returns the login success response, going to NEXT (a local path) or /app."
+  [req session & [next]]
   {:status 200
    :body ""
    :headers {"Content-Type" "text/plain"
              "Set-Cookie" (session-cookie req (:sid session))
-             "HX-Redirect" "/app"}})
+             "HX-Redirect" (safe-next next)}})
 
 (defn login-fail
   "Returns the login fail response."
@@ -100,7 +105,7 @@
       (let [row (first (jdbc/query (db/get-db-spec)
                                    ["select password from users where username = ? and enabled = 1" user]))]
         (if (and (verify-password pass (or (:password row) @dummy-hash)) row)
-          (login-success req (initialize-session user))
+          (login-success req (initialize-session user) (get form-params "next"))
           (do (rl/record! :login address)
               (login-fail)))))))
 

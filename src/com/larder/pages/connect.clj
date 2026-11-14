@@ -20,6 +20,7 @@
   (:require [clojure.string :as str]
             [com.larder.api-keys :as api-keys]
             [com.larder.global-settings :as gs]
+            [com.larder.oauth :as oauth]
             [com.larder.pages.layout :as layout]
             [com.larder.response :as r]
             [com.larder.ui :as ui]
@@ -86,6 +87,45 @@
   (let [ok (api-keys/revoke! (u/parse-int id) (:id me))]
     (r/h-respond (keys-card req me {:message (if ok {:kind :success :text "Key revoked."} {:kind :error :text "No such key."})}))))
 
+;;; OAuth connections
+
+(defn- connection-table
+  [rows revoke-url & [show-user?]]
+  (if (empty? rows)
+    [:p.muted "No connected apps."]
+    [:div.table-scroll
+     [:table.table
+      [:thead [:tr [:th "App"] (when show-user? [:th "User"]) [:th "Connected"] [:th "Last used"] [:th]]]
+      [:tbody
+       (for [c rows]
+         [:tr
+          [:td (:client_name c)]
+          (when show-user? [:td (:username c)])
+          [:td.nowrap (u/format-date (:created_at c))]
+          [:td.nowrap (u/format-ts (:last_used_at c))]
+          [:td.actions
+           [:form {:hx-post (revoke-url c) :hx-target "closest section" :hx-swap "outerHTML"
+                   :hx-confirm (str "Disconnect " (:client_name c) "? It will have to sign in again.")}
+            [:input {:type "hidden" :name "client_id" :value (:client_id c)}]
+            [:input {:type "hidden" :name "user_id" :value (:user_id c)}]
+            [:button.btn.btn-danger.small {:type "submit"} "Disconnect"]]]])]]]))
+
+(defn connections-card
+  [req me & [message]]
+  [:section#connections-card.card
+   [:div.card-header [:h2 "Connected apps"]]
+   [:p.muted "Apps you signed in to with your Larder login, such as Claude through its connector or Claude Code's "
+    [:code "/mcp"] " command. Add Larder to them with the server URL " [:code (mcp-url req)] "."]
+   (when-not (gs/enabled? "mcp_oauth")
+     (ui/alert :info "An admin has turned OAuth sign-in off, so connected apps don't work at the moment."))
+   (ui/message-alert message)
+   (connection-table (oauth/connections (:id me)) (constantly "/api/connections/revoke"))])
+
+(defn api-revoke-own-connection
+  [req me]
+  (oauth/revoke-connection! (str (get-in req [:params :client_id])) (:id me))
+  (r/h-respond (connections-card req me {:kind :success :text "Disconnected."})))
+
 ;;; Admin
 
 (defn mcp-card
@@ -96,11 +136,13 @@
    [:form.form {:hx-post "/api/site/mcp" :hx-target "#mcp-card" :hx-swap "outerHTML" :hx-trigger "change"}
     [:input {:type "hidden" :name "submitted" :value "1"}]
     [:label.checkbox [:input {:type "checkbox" :name "mcp_api_keys" :value "1" :checked (gs/enabled? "mcp_api_keys")}]
-     [:span "API keys — users create keys under Settings → API keys."]]
+     [:span "API keys — users create keys under Settings → Claude."]]
     [:label.checkbox [:input {:type "checkbox" :name "mcp_oauth" :value "1" :checked (gs/enabled? "mcp_oauth")}]
      [:span "OAuth — users sign in with their Larder login from Claude."]]]
    [:h3.subhead "Active API keys"]
-   (key-table (api-keys/all-active) {:show-user? true :revoke-url #(str "/api/site/keys/" % "/revoke")})])
+   (key-table (api-keys/all-active) {:show-user? true :revoke-url #(str "/api/site/keys/" % "/revoke")})
+   [:h3.subhead "Connected OAuth apps"]
+   (connection-table (oauth/connections) (constantly "/api/site/connections/revoke") true)])
 
 (defn api-save-mcp
   [req _me]
@@ -113,3 +155,8 @@
   [_req _me id]
   (let [ok (api-keys/revoke! (u/parse-int id))]
     (r/h-respond (mcp-card (if ok {:kind :success :text "Key revoked."} {:kind :error :text "No such key."})))))
+
+(defn api-revoke-any-connection
+  [req _me]
+  (oauth/revoke-connection! (str (get-in req [:params :client_id])) (u/parse-int (get-in req [:params :user_id])))
+  (r/h-respond (mcp-card {:kind :success :text "Disconnected."})))

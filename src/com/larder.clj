@@ -36,6 +36,7 @@
             [com.larder.pages.made :as made]
             [com.larder.pages.mealplan :as mealplan-page]
             [com.larder.pages.not-found :as nf]
+            [com.larder.pages.oauth :as oauth-page]
             [com.larder.pages.connect :as connect]
             [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.ingredients :as ingredients-page]
@@ -135,6 +136,10 @@
     (auth/requires-user connect/api-create-key req))
   (cjr/POST "/api/keys/:id/revoke" [id :as req]
     (auth/requires-user (fn [req me] (connect/api-revoke-own req me id)) req))
+  (cjr/POST "/api/connections/revoke" req
+    (auth/requires-user connect/api-revoke-own-connection req))
+  (cjr/POST "/api/site/connections/revoke" req
+    (auth/requires-admin connect/api-revoke-any-connection req))
   (cjr/POST "/api/site/mcp" req
     (auth/requires-admin connect/api-save-mcp req))
   (cjr/POST "/api/site/keys/:id/revoke" [id :as req]
@@ -165,6 +170,16 @@
   ;; MCP: bearer tokens only, no cookies (see com.larder.mcp).
   (cjr/ANY "/mcp" req
     (mcp/handler req))
+
+  ;; OAuth for MCP clients
+  (cjr/GET "/.well-known/oauth-protected-resource" req (oauth-page/protected-resource req))
+  (cjr/GET "/.well-known/oauth-protected-resource/mcp" req (oauth-page/protected-resource req))
+  (cjr/GET "/.well-known/oauth-authorization-server" req (oauth-page/authorization-server req))
+  (cjr/GET "/.well-known/openid-configuration" req (oauth-page/authorization-server req))
+  (cjr/GET "/oauth/authorize" req (oauth-page/authorize-get req))
+  (cjr/POST "/oauth/authorize" req (oauth-page/authorize-post req))
+  (cjr/POST "/oauth/token" req (oauth-page/token req))
+  (cjr/POST "/oauth/register" req (oauth-page/register req))
 
   ;; Public pages
   (cjr/GET "/" req
@@ -205,9 +220,10 @@
     {:status 302 :headers {"Location" "/app"} :body ""})
   ; Login page
   (cjr/GET "/login" req
-    (if (auth/current-user req)
-      {:status 302 :headers {"Location" "/app"} :body ""}
-      (lp/login-page)))
+    (let [next (get-in req [:params :next])]
+      (if (auth/current-user req)
+        {:status 302 :headers {"Location" (session/safe-next next)} :body ""}
+        (lp/login-page (when (string? next) (session/safe-next next))))))
   ; Logout - clears session and redirects to login
   (cjr/GET "/logout" req
     (session/logout req))
@@ -243,6 +259,7 @@
         wrap-content-type
         wrap-cookies
         mw/wrap-same-origin
+        mw/wrap-cors
         mw/wrap-body-limit
         mw/wrap-security-headers)))
 

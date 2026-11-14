@@ -21,7 +21,7 @@
   They all run whenever `server-version` changes. Times are stored as epoch milliseconds."
   (:require [clojure.java.jdbc :as jdbc]))
 
-(def server-version "0.10.0")
+(def server-version "0.11.0")
 ;; Reset whenever this namespace is reloaded; set once check-run-migrations has run.
 (def migration-chk-ran (atom nil))
 
@@ -225,7 +225,47 @@
         "key_hash text not null,"
         "last_used_at integer,"
         "created_at integer not null,"
-        "revoked_at integer)")])
+        "revoked_at integer)")
+   ;; 0.11.0: OAuth. Clients come from dynamic registration (kind registered) or are
+   ;; client ID metadata documents fetched from their URL (kind metadata). Codes and
+   ;; tokens are stored as SHA-256 hashes. Tokens of one authorization share a family,
+   ;; revoked together when a used code or rotated refresh token is presented again.
+   (str "create table if not exists oauth_clients ("
+        "id integer primary key autoincrement,"
+        "client_id text not null unique,"
+        "kind text not null,"
+        "name text not null,"
+        "redirect_uris text not null,"
+        "created_at integer not null,"
+        "fetched_at integer)")
+   (str "create table if not exists oauth_codes ("
+        "id integer primary key autoincrement,"
+        "code_hash text not null unique,"
+        "client_id text not null,"
+        "user_id integer not null references users (id) on delete cascade,"
+        "code_challenge text not null,"
+        "redirect_uri text not null,"
+        "resource text not null,"
+        "scope text,"
+        "family text not null,"
+        "expires_at integer not null,"
+        "used_at integer)")
+   (str "create table if not exists oauth_tokens ("
+        "id integer primary key autoincrement,"
+        "access_hash text not null unique,"
+        "refresh_hash text not null unique,"
+        "client_id text not null,"
+        "user_id integer not null references users (id) on delete cascade,"
+        "resource text not null,"
+        "scope text,"
+        "family text not null,"
+        "access_expires_at integer not null,"
+        "refresh_expires_at integer not null,"
+        "created_at integer not null,"
+        "last_used_at integer,"
+        "revoked_at integer)")
+   "create index if not exists oauth_tokens_family on oauth_tokens (family)"
+   "create index if not exists oauth_tokens_client on oauth_tokens (client_id, user_id)"])
 
 (defn run-migrations
   "Initialize or update a database. No user is created: the first admin comes from onboarding."

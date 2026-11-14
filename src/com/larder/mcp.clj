@@ -26,22 +26,20 @@
             [com.larder.api-keys :as api-keys]
             [com.larder.global-settings :as gs]
             [com.larder.mcp-tools :as tools]
+            [com.larder.oauth :as oauth]
             [com.larder.pages.layout :as layout]
             [com.larder.users :as users]))
 
 (def supported-versions ["2025-11-25" "2025-06-18" "2025-03-26"])
 (def latest-version (first supported-versions))
 
-(def server-info {:name "larder" :title "Larder" :version "0.10.0"})
+(def server-info {:name "larder" :title "Larder" :version "0.11.0"})
 
 (def instructions
   (str "Larder is a household's shared recipes, pantry, grocery list and meal plan. "
        "Ingredients are shared records: resolve names with resolve_ingredients before adding pantry or grocery items. "
        "Pantry rows are one per purchase; a null quantity means the amount is unknown. "
        "Recipes added with add_recipe are drafts unless publish is true."))
-
-;; Phase 11 sets this to the OAuth access token lookup: token -> {:user_id ...} or nil.
-(defonce oauth-lookup (atom (fn [_token] nil)))
 
 ;;; Responses
 
@@ -62,7 +60,7 @@
   "401 telling the client where to find out how to sign in."
   [req & [error]]
   (json-response 401 (rpc-error nil -32001 "Sign in to Larder: send an API key or an OAuth access token as a bearer token.")
-                 {"WWW-Authenticate" (str "Bearer resource_metadata=\"" (resource-metadata-url req) "\""
+                 {"WWW-Authenticate" (str "Bearer resource_metadata=\"" (resource-metadata-url req) "\", scope=\"" oauth/scope "\""
                                           (when error (str ", error=\"" error "\"")))}))
 
 ;;; Authentication
@@ -76,7 +74,9 @@
   [req]
   (when-let [token (bearer-token req)]
     (let [user-id (or (when (gs/enabled? "mcp_api_keys") (:user_id (api-keys/lookup token)))
-                      (when (gs/enabled? "mcp_oauth") (:user_id (@oauth-lookup token))))
+                      (when (gs/enabled? "mcp_oauth")
+                        ;; Only tokens issued for this server's MCP endpoint (audience binding).
+                        (:user_id (oauth/lookup-access-token token (str (layout/site-url req) "/mcp")))))
           user (when user-id (users/by-id user-id))]
       (when (= 1 (:enabled user)) user))))
 

@@ -114,3 +114,27 @@
   (fn [req]
     (when-let [resp (handler req)]
       (update resp :headers #(merge security-headers %)))))
+
+(defn- cors-path?
+  "Endpoints called by token-holding clients, possibly from a browser. None of them
+  honour the session cookie, so any origin may call them."
+  [uri]
+  (or (= uri "/mcp") (= uri "/oauth/token") (= uri "/oauth/register")
+      (str/starts-with? uri "/.well-known/")))
+
+(def ^:private cors-headers
+  {"Access-Control-Allow-Origin" "*"
+   "Access-Control-Allow-Methods" "GET, POST, OPTIONS"
+   "Access-Control-Allow-Headers" "Authorization, Content-Type, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID"
+   "Access-Control-Expose-Headers" "WWW-Authenticate, Mcp-Session-Id"
+   "Access-Control-Max-Age" "86400"})
+
+(defn wrap-cors
+  "CORS for `cors-path?` endpoints, including preflight requests."
+  [handler]
+  (fn [req]
+    (if (cors-path? (:uri req))
+      (if (= :options (:request-method req))
+        {:status 204 :headers cors-headers :body ""}
+        (some-> (handler req) (update :headers #(merge cors-headers %))))
+      (handler req))))
