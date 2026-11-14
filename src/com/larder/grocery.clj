@@ -157,3 +157,12 @@
   "\"2 cups\" for an item's default amount, or nil."
   [quantity unit]
   (when quantity (str (units/format-qty quantity) " " unit)))
+
+(defn open-item-for-ingredient?
+  [ing-id]
+  (boolean (seq (db/run-db-query ["select 1 from grocery_items where done_at is null and section = 'grocery' and ingredient_id = ?" ing-id]))))
+
+(defn open-misc-text?
+  "True when an open misc item reads TEXT (ignoring case)."
+  [text]
+  (boolean (seq (db/run-db-query ["select 1 from grocery_items where done_at is null and section = 'misc' and lower(text) = lower(?)" (str/trim text)]))))

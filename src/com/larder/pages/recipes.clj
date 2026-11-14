@@ -24,12 +24,15 @@
             [com.larder.images :as images]
             [com.larder.import.core :as importer]
             [com.larder.import.web]
+            [com.larder.grocery :as grocery]
             [com.larder.ingredients :as ingredients]
             [com.larder.pages.layout :as layout]
             [com.larder.pages.recipe-view :as view]
             [com.larder.recipes :as recipes]
             [com.larder.response :as r]
+            [com.larder.status :as status]
             [com.larder.ui :as ui]
+            [com.larder.units :as units]
             [com.larder.uploads :as uploads]
             [com.larder.util :as u]))
 
@@ -42,11 +45,13 @@
 (defn recipe-list
   [params]
   (let [found (recipes/search {:q (:q params) :status (:status params)})
+        tags (status/recipe-statuses (status/snapshot) (map :id found))
         filtered? (or (seq (str/trim (or (:q params) ""))) (recipes/statuses (:status params)))]
     [:div#recipe-list
      (view/card-grid (for [rec found]
-                       (apply view/recipe-card rec (ui/nav-attrs (recipe-path (:id rec)))
-                              (when (= "draft" (:status rec)) [(draft-badge)])))
+                       (view/recipe-card rec (ui/nav-attrs (recipe-path (:id rec)))
+                                         (when (= "draft" (:status rec)) (draft-badge))
+                                         (view/status-tag (tags (:id rec)) #{:ready})))
                      (if filtered? "No recipes match." "No recipes yet. Use Add to create one."))]))
 
 (defn recipes-page
@@ -70,15 +75,31 @@
 
 ;;; Detail
 
-(defn line-with-match
-  "A recipe line, flagged when it isn't matched to an ingredient."
-  [line]
-  (list (:original_text line)
-        (when-not (:ingredient_id line)
-          (list " " [:span.badge.unmatched {:title "Not matched to an ingredient"} "Not matched"]))))
+(defn grocery-button
+  [recipe-id line]
+  [:button.icon-button.grocery-add-button {:hx-post (str "/api/recipes/" recipe-id "/lines/" (:id line) "/grocery")
+                                           :hx-swap "outerHTML"
+                                           :title "Add to the grocery list"
+                                           :aria-label (str "Add " (:original_text line) " to the grocery list")}
+   (ui/grocery-icon)])
+
+(defn line-with-status
+  "A recipe line with its pantry status, the amount in stock and a grocery button."
+  [snap recipe-id line]
+  (let [{st :status rem :remaining always? :always?} (status/line-status snap line)]
+    [:div.line-with-status
+     [:div.line-text
+      [:span (:original_text line)]
+      (if (:ingredient_id line)
+        [:span.line-status
+         [:span.badge.line-badge {:class (name st)} (if always? "Always have" (status/line-labels st))]
+         (when rem [:span.muted.remaining (str (units/format-qty (:quantity rem)) " " (:unit rem) " in pantry")])]
+        [:span.line-status [:span.badge.unmatched {:title "Not matched to an ingredient"} "Not matched"]])]
+     (grocery-button recipe-id line)]))
 
 (defn detail-main
   [recipe & [message]]
+  (let [snap (status/snapshot)]
   (layout/main
    "recipes"
    [:div.page-top
@@ -86,15 +107,19 @@
      [:h1.dashboard-title.compact (:title recipe)]
      [:div.recipe-subline
       (when (= "draft" (:status recipe)) (draft-badge))
+      (view/status-tag (status/recipe-status snap (:ingredients recipe)))
       (view/tag-list (:tags recipe))
       (when-let [src (:source_url recipe)]
         [:a.source-link {:href src :target "_blank" :rel "noopener noreferrer"} "Source"])]]
     [:div.page-actions
+     [:button.btn.btn-secondary {:hx-post (str "/api/recipes/" (:id recipe) "/grocery") :hx-target "#recipe-message"
+                                 :hx-swap "innerHTML"}
+      "Add missing to grocery list"]
      [:a.btn.btn-secondary (ui/nav-attrs (str (recipe-path (:id recipe)) "/edit")) "Edit"]
      [:button.btn.btn-danger {:hx-post (str "/api/recipes/" (:id recipe) "/delete")
                               :hx-confirm (str "Delete " (:title recipe) "? This can't be undone.")}
       "Delete"]]]
-   (ui/message-alert message)
+   [:div#recipe-message (ui/message-alert message)]
    (let [unmatched (count (remove :ingredient_id (:ingredients recipe)))]
      (when (pos? unmatched)
        (ui/alert :info
@@ -102,12 +127,61 @@
                       " matched to an ingredient yet, so the pantry can't track "
                       (if (= 1 unmatched) "it" "them") ". ")
                  [:a (ui/nav-attrs (str (recipe-path (:id recipe)) "/edit")) "Review in the editor"])))
-   (view/detail-body recipe {:line-fn line-with-match})))
+   (view/detail-body recipe {:line-fn #(line-with-status snap (:id recipe) %)}))))
 
 (defn recipe-page
   [req user id]
   (if-let [recipe (recipes/by-id (u/parse-int id))]
     (layout/app-page req user (detail-main recipe))
+    (auth/not-found)))
+
+;;; Grocery list from a recipe
+
+(defn add-line-to-grocery!
+  "Put recipe LINE on the grocery list for USER: a matched line as its ingredient (the
+  default purchase size, else the recipe amount), an unmatched one as a misc item with
+  its text. Returns :added, :merged or :already (misc text already listed)."
+  [snap line user]
+  (if-let [ing-id (:ingredient_id line)]
+    (let [[q unit] (status/grocery-amount snap line)]
+      (if (:merged? (grocery/add-ingredient! {:ingredient_id ing-id :quantity q :unit unit
+                                              :origin "recipe" :added_by (:id user)}))
+        :merged
+        :added))
+    (if (grocery/open-misc-text? (:original_text line))
+      :already
+      (do (grocery/add-misc! {:text (:original_text line) :origin "recipe" :added_by (:id user)})
+          :added))))
+
+(defn api-line-to-grocery
+  [_req user recipe-id line-id]
+  (let [recipe (recipes/by-id (u/parse-int recipe-id))
+        line (first (filter #(= (u/parse-int line-id) (:id %)) (:ingredients recipe)))]
+    (if line
+      (do (add-line-to-grocery! (status/snapshot) line user)
+          (r/h-respond [:span.on-list {:title "On the grocery list"} "✓"]))
+      (auth/not-found))))
+
+(defn api-missing-to-grocery
+  "Add every Missing or Low line that isn't on the grocery list yet."
+  [_req user recipe-id]
+  (if-let [recipe (recipes/by-id (u/parse-int recipe-id))]
+    (let [snap (status/snapshot)
+          wanted (filter #(#{:missing :low} (:status (status/line-status snap %))) (:ingredients recipe))
+          results (for [line wanted]
+                    (if (and (:ingredient_id line) (grocery/open-item-for-ingredient? (:ingredient_id line)))
+                      :already
+                      (add-line-to-grocery! snap line user)))
+          added (count (filter #{:added :merged} results))
+          already (count (filter #{:already} results))]
+      (r/h-respond
+       (ui/alert (if (pos? added) :success :info)
+                 (cond
+                   (empty? wanted) "Everything is in the pantry."
+                   (zero? added) "Everything missing is already on the grocery list."
+                   :else (str "Added " added (if (= 1 added) " item" " items") " to the grocery list"
+                              (when (pos? already) (str "; " already " already on it"))
+                              ".")))))
     (auth/not-found)))
 
 ;;; Unmatched ingredient picker

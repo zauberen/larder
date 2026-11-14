@@ -18,6 +18,7 @@
   "Recipe display pieces shared by the app and the public dashboard."
   (:require [clojure.string :as str]
             [com.larder.recipes :as recipes]
+            [com.larder.status :as status]
             [com.larder.ui :as ui]))
 
 (defn image-url
@@ -36,6 +37,12 @@
   [tags]
   (when (seq tags)
     (into [:div.tag-list] (for [t tags] [:span.tag t]))))
+
+(defn status-tag
+  "The badge for a recipe status (:ready, :some, :none); ONLY limits which are shown."
+  [tag & [only]]
+  (when (and tag (or (nil? only) (contains? only tag)))
+    [:span.badge.status-tag {:class (name tag)} (status/tag-labels tag)]))
 
 (defn recipe-card
   "A card linking to HREF. LINK-ATTRS are the link's attributes (nav-attrs in the app)."

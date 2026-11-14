@@ -79,6 +79,10 @@
     (auth/requires-user (fn [req user] (recipes-page/api-match-line req user id line)) req))
   (cjr/POST "/api/recipes/:id/lines/:line/create" [id line :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-create-ingredient req user id line)) req))
+  (cjr/POST "/api/recipes/:id/grocery" [id :as req]
+    (auth/requires-user (fn [req user] (recipes-page/api-missing-to-grocery req user id)) req))
+  (cjr/POST "/api/recipes/:id/lines/:line/grocery" [id line :as req]
+    (auth/requires-user (fn [req user] (recipes-page/api-line-to-grocery req user id line)) req))
   (cjr/POST "/api/recipes/:id/delete" [id :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-delete req user id)) req))
   ;; Pantry and ingredients

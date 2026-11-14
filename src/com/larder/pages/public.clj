@@ -22,6 +22,7 @@
             [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.recipe-view :as view]
             [com.larder.recipes :as recipes]
+            [com.larder.status :as status]
             [com.larder.util :as u]
             [com.larder.response :as r]
             [com.larder.ui :as ui]))
@@ -63,9 +64,12 @@
   [req]
   (public-shell req "recipes"
                 [:h1.dashboard-title "Recipes"]
-                (view/card-grid (for [rec (recipes/search {:status "published"})]
-                                  (view/recipe-card rec {:href (str "/recipes/" (:id rec))}))
-                                "No recipes have been published yet.")))
+                (let [found (recipes/search {:status "published"})
+                      tags (status/recipe-statuses (status/snapshot) (map :id found))]
+                  (view/card-grid (for [rec found]
+                                    (view/recipe-card rec {:href (str "/recipes/" (:id rec))}
+                                                      (view/status-tag (tags (:id rec)) #{:ready})))
+                                  "No recipes have been published yet."))))
 
 (defn recipe-page
   "A published recipe for visitors. Drafts are not found."
@@ -74,6 +78,8 @@
     (public-shell req "recipes"
                   [:a.back-link {:href "/"} "← All recipes"]
                   [:h1.dashboard-title (:title recipe)]
+                  ;; Visitors see whether it's pantry ready, never the amounts.
+                  (view/status-tag (status/recipe-status (status/snapshot) (:ingredients recipe)) #{:ready})
                   (view/detail-body recipe))
     (auth/not-found)))
 
