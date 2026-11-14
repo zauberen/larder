@@ -97,6 +97,8 @@
   [w]
   (cond
     (<= (count w) 3) w
+    ;; Not every -ves word: olives, cloves and chives keep their e.
+    (#{"leaves" "halves" "loaves"} w) (str (subs w 0 (- (count w) 3)) "f")
     (str/ends-with? w "ies") (str (subs w 0 (- (count w) 3)) "y")
     (re-find #"(?:ch|sh|ss|x|z|o)es$" w) (subs w 0 (- (count w) 2))
     (re-find #"(?:ss|us|is)$" w) w

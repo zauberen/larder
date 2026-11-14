@@ -63,7 +63,9 @@
     (is (= (ing/match "flour") (ing/match "All-Purpose Flour")))
     (is (= (ing/match "egg") (ing/match "Eggs")))
     (is (= (ing/match "lemon") (ing/match "lemons")))
-    (is (some? (ing/match "chicken stock"))))
+    (is (some? (ing/match "chicken stock")))
+    (is (= (ing/match-key "bay leaf") (ing/match-key "bay leaves")))
+    (is (= "olive clove" (ing/match-key "olives cloves"))))
   (testing "unknown names don't match"
     (is (nil? (ing/match "dragon fruit")))
     (is (nil? (ing/match "  ")))))
