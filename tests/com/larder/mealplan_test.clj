@@ -62,7 +62,8 @@
         (is (= [0 1] (map :position (mp/entries-on (d "2026-11-13"))))))
       (testing "moving returns both days, the old one out of band"
         (let [resp (req :post (str "/api/meal-plan/entries/" (:id entry) "/move") :sid sid :form {:date "2026-11-14"})]
-          (is (str/starts-with? (:text resp) "<div class=\"mp-day\" data-day=\"2026-11-14\""))
+          (is (re-find #"^<div class=\"mp-day(?: [^\"]*)?\" data-day=\"2026-11-14\"" (:text resp))
+              "the new day comes first (it may also be today)")
           (is (re-find #"data-day=\"2026-11-13\"[^>]*hx-swap-oob=\"true\"|hx-swap-oob=\"true\"[^>]*data-day=\"2026-11-13\"" (:text resp)))
           (is (= "2026-11-14" (:date (mp/by-id (:id entry)))))))
       (testing "servings per entry"
