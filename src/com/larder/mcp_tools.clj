@@ -247,6 +247,85 @@
       (ingredients/rematch-unmatched!)
       {:ingredient (ingredient-map (ingredients/by-id id))})))
 
+(defn review-ingredients
+  [{:keys [issues_only]} _user]
+  (let [use (ingredients/usage)
+        aliases (ingredients/all-aliases)
+        rows (for [ing (ingredients/all)
+                   :let [u (get use (:id ing))
+                         found (ingredients/issues ing u)]
+                   :when (or (not (true? issues_only)) (seq found))]
+               {:id (:id ing) :name (:name ing) :dimension (:dimension ing) :density (:density ing)
+                :default_purchase (amount-map (:default_quantity ing) (:default_unit ing))
+                :always_have (= 1 (:always_have ing))
+                :aliases (get aliases (:id ing) [])
+                :used_in_recipes (:recipes u 0) :recipe_lines (:recipe_lines u 0)
+                :pantry_rows (:pantry_rows u 0) :open_grocery_items (:grocery_items u 0)
+                :units_used (:units u [])
+                :issues (mapv name found)})
+        unmatched (ingredients/unmatched-groups)]
+    {:ingredients (vec rows)
+     :unmatched_lines unmatched
+     :summary {:ingredients (count (ingredients/all))
+               :with_issues (count (filter #(seq (:issues %)) rows))
+               :unmatched_lines (reduce + 0 (map :lines unmatched))}}))
+
+(defn- ingredient-edit
+  "The edited values of ingredient item ITEM merged over its current record, or a fail."
+  [item]
+  (let [ing (or (ingredients/by-id (req-id item :id)) (fail (str "No ingredient " (:id item) ".")))
+        has? #(contains? item %)
+        dq (if (has? :default_quantity) (opt-num item :default_quantity) (:default_quantity ing))
+        du (cond (has? :default_unit) (some-> (:default_unit item) str units/normalize)
+                 :else (:default_unit ing))
+        density (if (has? :density) (opt-num item :density) (:density ing))
+        clean (fn [xs] (vec (distinct (remove str/blank? (map (comp str/trim str) xs)))))
+        aliases (cond-> (if (has? :aliases) (clean (:aliases item)) (ingredients/aliases (:id ing)))
+                  (has? :add_aliases) (-> (into (clean (:add_aliases item))) distinct vec))
+        values {:name (if (has? :name) (str/trim (str (:name item))) (:name ing))
+                :dimension (if (has? :dimension) (:dimension item) (:dimension ing))
+                :density density :default_quantity dq :default_unit (when dq du)
+                :always_have (if (has? :always_have) (true? (:always_have item)) (= 1 (:always_have ing)))}
+        errors (concat (ingredients/validate values (:id ing))
+                       (ingredients/alias-errors (:id ing) aliases)
+                       (when (and (has? :default_unit) (:default_unit item) (nil? du)) [(str "Unknown unit " (:default_unit item) ".")])
+                       (when (and dq (not (pos? dq))) ["default_quantity must be above zero."])
+                       (when (and dq (nil? du)) ["Give a default_unit with default_quantity."])
+                       (when (> (count aliases) 50) ["Up to 50 aliases."]))]
+    (when (seq errors) (fail (str/join " " errors)))
+    {:id (:id ing) :values values :aliases aliases}))
+
+(defn update-ingredients
+  [args _user]
+  (let [edits (vec (for [[i item] (map-indexed vector (batch args :ingredients))]
+                     (try (ingredient-edit item)
+                          (catch clojure.lang.ExceptionInfo e
+                            (fail (str "Ingredient " (inc i) ": " (ex-message e)))))))
+        ids (map :id edits)
+        names (mapcat #(cons (:name (:values %)) (:aliases %)) edits)
+        clash (->> (group-by ingredients/match-key names) vals (filter #(< 1 (count %))) first)]
+    (when (not= (count ids) (count (distinct ids))) (fail "Each ingredient may appear once per call."))
+    (when clash (fail (str "\"" (first clash) "\" is given to more than one ingredient.")))
+    (doseq [{:keys [id values aliases]} edits]
+      (ingredients/update! id values)
+      (ingredients/set-aliases! id aliases))
+    {:ingredients (mapv #(ingredient-map (ingredients/by-id %)) ids)
+     :recipe_lines_matched (ingredients/rematch-unmatched!)}))
+
+(defn merge-ingredients
+  [args _user]
+  (let [into-id (req-id args :into_id)
+        ids (mapv #(whole % "ids") (batch args :ids))]
+    (when-not (ingredients/by-id into-id) (fail (str "No ingredient " into-id ".")))
+    (doseq [id ids] (when-not (ingredients/by-id id) (fail (str "No ingredient " id "."))))
+    (when (some #{into-id} ids) (fail "into_id can't also be in ids."))
+    (when (not= (count ids) (count (distinct ids))) (fail "ids has repeats."))
+    (let [merged (vec (for [id ids :let [n (:name (ingredients/by-id id))]]
+                        (assoc (ingredients/merge! id into-id) :name n)))]
+      {:ingredient (ingredient-map (ingredients/by-id into-id))
+       :merged merged
+       :recipe_lines_matched (ingredients/rematch-unmatched!)})))
+
 ;;; Pantry
 
 (defn list-pantry
@@ -471,6 +550,30 @@
     :inputSchema (obj {:name s-str :dimension {:type "string" :enum ["mass" "volume" "count"]} :density s-num
                        :default_quantity s-num :default_unit s-unit :always_have {:type "boolean"}
                        :aliases {:type "array" :items s-str}} :name :dimension)}
+   {:name "review_ingredients" :fn review-ingredients
+    :description (str "Review the ingredient list: every ingredient with its aliases, density, default purchase size, how many recipes, "
+                      "pantry rows and open grocery items use it, the units they use, and issues: unused, needs_density (used by weight "
+                      "and by volume with no density, so amounts can't convert), measured_differently (used in count units and weights "
+                      "or volumes, which never convert), no_default_purchase (nothing to add to the grocery list when it runs out). "
+                      "Also lists unmatched recipe lines grouped by name. Look for duplicates (e.g. \"scallion\" and \"green onion\") "
+                      "to merge_ingredients, gaps to fill with update_ingredients, and unmatched names to add as aliases or "
+                      "create_ingredient. Propose the changes to the user before making them.")
+    :inputSchema (obj {:issues_only {:type "boolean" :description "Only ingredients with issues."}})}
+   {:name "update_ingredients" :fn update-ingredients
+    :description (str "Edit ingredients in one batch. Only the fields given change; null clears density or the default purchase size. "
+                      "aliases replaces the other names, add_aliases adds to them. Unmatched recipe lines are rematched afterwards.")
+    :inputSchema (obj {:ingredients {:type "array" :maxItems max-batch
+                                     :items (obj {:id s-int :name s-str :dimension {:type "string" :enum ["mass" "volume" "count"]}
+                                                  :density (assoc s-num :type ["number" "null"] :description "Grams per millilitre.")
+                                                  :default_quantity (assoc s-num :type ["number" "null"])
+                                                  :default_unit s-unit :always_have {:type "boolean"}
+                                                  :aliases {:type "array" :items s-str}
+                                                  :add_aliases {:type "array" :items s-str}} :id)}} :ingredients)}
+   {:name "merge_ingredients" :fn merge-ingredients
+    :description (str "Merge duplicate ingredients (ids) into one (into_id): their recipe lines, pantry rows, grocery items and aliases "
+                      "move over, their names become aliases, and into_id keeps its own settings, taking the density and default "
+                      "purchase size from them only where it has none. The merged ingredients are deleted. This can't be undone.")
+    :inputSchema (obj {:into_id s-int :ids s-ids} :into_id :ids)}
    {:name "list_pantry" :fn list-pantry
     :description "List pantry rows (one per purchase or entry): ingredient, quantity (null when unknown), unit, date added, source."
     :inputSchema (obj {:query s-str :source {:type "string" :enum ["grocery" "manual" "mcp"]}})}

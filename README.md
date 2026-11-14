@@ -12,7 +12,7 @@ One server holds a shared recipe collection, pantry, grocery list and meal plan.
 - **Grocery list.** Items are grouped by store. You can add a recipe's missing ingredients in one click, and amounts for the same ingredient are merged. When you check an item off, you confirm how much you bought and it goes into the pantry. You can keep the list private, open it to visitors, or share it through a secret link.
 - **Made it.** Records that you cooked a recipe. It takes the scaled amounts out of the pantry, adds anything that ran out to the grocery list, and logs the cook.
 - **Meal plan.** A week or month calendar. Drag recipes onto days, or tap a recipe and then a day. One button fills the grocery list with whatever the plan needs that the pantry and the list don't already cover.
-- **MCP for Claude.** Claude can search recipes, import them, manage the pantry, grocery list and meal plan, and mark recipes as made. It signs in with an API key or OAuth: Larder is its own authorization server, supporting dynamic client registration and client ID metadata documents.
+- **MCP for Claude.** Claude can search recipes, import them, manage the pantry, grocery list and meal plan, mark recipes as made, and review the ingredient list (merge duplicates, fill in missing densities and purchase sizes, match unmatched recipe lines). It signs in with an API key or OAuth: Larder is its own authorization server, supporting dynamic client registration and client ID metadata documents.
 - **Accounts.** Admin and user roles, Argon2id password hashing and rate-limited logins. Admins manage users and site settings.
 
 ## Requirements

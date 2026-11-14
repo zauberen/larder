@@ -37,7 +37,8 @@
 
 (def instructions
   (str "Larder is a household's shared recipes, pantry, grocery list and meal plan. "
-       "Ingredients are shared records: resolve names with resolve_ingredients before adding pantry or grocery items. "
+       "Ingredients are shared records: resolve names with resolve_ingredients before adding pantry or grocery items, "
+       "and use review_ingredients when asked to tidy or check them. "
        "Pantry rows are one per purchase; a null quantity means the amount is unknown. "
        "Recipes added with add_recipe are drafts unless publish is true."))
 

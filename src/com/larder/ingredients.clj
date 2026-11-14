@@ -232,3 +232,84 @@
     (jdbc/execute! tx ["delete from ingredient_aliases where ingredient_id = ?" id])
     (doseq [a (distinct (map str/trim aliases)) :when (seq a)]
       (jdbc/execute! tx ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" id a]))))
+
+(defn merge!
+  "Fold ingredient FROM-ID into INTO-ID: its recipe lines, pantry rows, grocery items and
+  aliases move over, its name becomes an alias, and INTO-ID takes its density and default
+  purchase size where it has none. FROM-ID is then deleted. Returns the counts moved."
+  [from-id into-id]
+  (jdbc/with-db-transaction [tx (db/get-db-spec)]
+    (let [q (fn [sql] (first (jdbc/execute! tx [sql into-id from-id])))
+          from (first (jdbc/query tx [(str "select " columns " from ingredients where id = ?") from-id]))
+          moved {:recipe_lines (q "update recipe_ingredients set ingredient_id = ? where ingredient_id = ?")
+                 :pantry_rows (q "update pantry_items set ingredient_id = ? where ingredient_id = ?")
+                 :grocery_items (q "update grocery_items set ingredient_id = ? where ingredient_id = ?")}]
+      (q "update ingredient_aliases set ingredient_id = ? where ingredient_id = ?")
+      (jdbc/execute! tx [(str "update ingredients set density = coalesce(density, ?),"
+                              " default_unit = case when default_quantity is null then ? else default_unit end,"
+                              " default_quantity = coalesce(default_quantity, ?), modified_at = ? where id = ?")
+                         (:density from) (:default_unit from) (:default_quantity from) (u/now-ms) into-id])
+      (jdbc/execute! tx ["delete from ingredients where id = ?" from-id])
+      (jdbc/execute! tx ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" into-id (:name from)])
+      moved)))
+
+;;; Review
+
+(defn usage
+  "Ingredient id -> {:recipes :recipe_lines :pantry_rows :grocery_items :units}: how many
+  recipes, lines, pantry rows and open grocery items use it, and the units they use."
+  []
+  (let [counts (fn [sql k] (into {} (map (juxt :ingredient_id k)) (db/run-db-query [sql])))
+        recipes (counts "select ingredient_id, count(distinct recipe_id) as n from recipe_ingredients where ingredient_id is not null group by ingredient_id" :n)
+        lines (counts "select ingredient_id, count(*) as n from recipe_ingredients where ingredient_id is not null group by ingredient_id" :n)
+        pantry (counts "select ingredient_id, count(*) as n from pantry_items group by ingredient_id" :n)
+        grocery (counts "select ingredient_id, count(*) as n from grocery_items where ingredient_id is not null and done_at is null group by ingredient_id" :n)
+        units (reduce (fn [m {:keys [ingredient_id unit]}] (update m ingredient_id (fnil conj (sorted-set)) unit))
+                      {}
+                      (db/run-db-query [(str "select ingredient_id, unit from recipe_ingredients where ingredient_id is not null and unit is not null"
+                                             " union select ingredient_id, unit from pantry_items where unit is not null"
+                                             " union select ingredient_id, unit from grocery_items where ingredient_id is not null and unit is not null and done_at is null")]))]
+    (into {} (for [id (distinct (concat (keys lines) (keys pantry) (keys grocery)))]
+               [id {:recipes (get recipes id 0) :recipe_lines (get lines id 0) :pantry_rows (get pantry id 0)
+                    :grocery_items (get grocery id 0) :units (vec (get units id))}]))))
+
+(defn all-aliases
+  "Ingredient id -> its aliases."
+  []
+  (reduce (fn [m {:keys [ingredient_id alias]}] (update m ingredient_id (fnil conj []) alias))
+          {} (db/run-db-query ["select ingredient_id, alias from ingredient_aliases order by lower(alias)"])))
+
+(defn issues
+  "What looks wrong with ingredient ING given its USE (from `usage`), as keywords:
+  :unused; :needs_density (used by weight and by volume without a density, so they can't
+  convert); :measured_differently (used in units of another dimension that can't convert
+  to its own); :no_default_purchase (used but no usual purchase size). Always-have
+  ingredients are never deducted or bought, so only :unused applies to them."
+  [ing use]
+  (let [own (:dimension ing)
+        dims (set (keep units/dimension (cond-> (:units use) (:default_unit ing) (conj (:default_unit ing)))))
+        weighable #{"mass" "volume"}
+        always? (= 1 (:always_have ing))]
+    (cond-> []
+      (nil? use) (conj :unused)
+      (and (not always?) (nil? (:density ing)) (every? (conj dims own) weighable)) (conj :needs_density)
+      ;; count units never convert to weights or volumes (mass vs volume is a density question)
+      (and (not always?) (some #(and (not= own %) (not (and (weighable own) (weighable %)))) dims))
+      (conj :measured_differently)
+      (and (not always?) use (nil? (:default_quantity ing))) (conj :no_default_purchase))))
+
+(defn unmatched-groups
+  "Unmatched recipe lines grouped by the name the parser read, most common first:
+  {:name :lines :examples :recipes [{:id :title}]}."
+  []
+  (let [rows (db/run-db-query [(str "select ri.original_text, r.id, r.title from recipe_ingredients ri"
+                                    " join recipes r on r.id = ri.recipe_id where ri.ingredient_id is null"
+                                    " order by r.title, ri.position")])
+        groups (group-by #(match-key (:name (parse-line (:original_text %)))) rows)]
+    (->> (for [[k rs] groups :when (seq k)]
+           {:name (:name (parse-line (:original_text (first rs))))
+            :lines (count rs)
+            :examples (vec (take 3 (distinct (map :original_text rs))))
+            :recipes (vec (take 10 (distinct (map #(select-keys % [:id :title]) rs))))})
+         (sort-by (juxt (comp - :lines) (comp str/lower-case :name)))
+         vec)))
