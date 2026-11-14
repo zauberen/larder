@@ -22,6 +22,7 @@
             [clojure.string :as str]
             [com.larder.database.db :as db]
             [com.larder.ingredients :as ingredients]
+            [com.larder.library.hooks :as hooks]
             [com.larder.util :as u])
   (:import (java.net URI)))
 
@@ -187,8 +188,8 @@
   []
   (into #{} (map #(str/lower-case (str/trim (:title %)))) (db/run-db-query ["select title from recipes"])))
 
-(defn- write-children!
-  "Replace the tags and ingredient lines of recipe ID."
+(defn write-children!
+  "Replace the tags and ingredient lines of recipe ID (in transaction TX)."
   [tx id {:keys [tags lines]}]
   (jdbc/execute! tx ["delete from recipe_tags where recipe_id = ?" id])
   (jdbc/execute! tx ["delete from recipe_ingredients where recipe_id = ?" id])
@@ -207,25 +208,30 @@
   "Store RECIPE (as from `parse-form`) with STATUS for USER-ID. Returns the new id."
   [recipe status user-id]
   {:pre [(statuses status)]}
-  (jdbc/with-db-transaction [tx (db/get-db-spec)]
-    (let [t (u/now-ms)
-          cols (concat columns [:status :image_path :created_by :created_at :modified_at])]
-      (jdbc/execute! tx (into [(str "insert into recipes (" (str/join ", " (map name cols)) ") values ("
-                                    (str/join ", " (repeat (count cols) "?")) ")")]
-                              (concat (map recipe columns) [status (:image_path recipe) user-id t t])))
-      (let [id (:id (first (jdbc/query tx ["select last_insert_rowid() as id"])))]
-        (write-children! tx id recipe)
-        id))))
+  (hooks/writing
+   (let [id (jdbc/with-db-transaction [tx (db/get-db-spec)]
+              (let [t (u/now-ms)
+                    cols (concat columns [:status :image_path :created_by :created_at :modified_at])]
+                (jdbc/execute! tx (into [(str "insert into recipes (" (str/join ", " (map name cols)) ") values ("
+                                              (str/join ", " (repeat (count cols) "?")) ")")]
+                                        (concat (map recipe columns) [status (:image_path recipe) user-id t t])))
+                (let [id (:id (first (jdbc/query tx ["select last_insert_rowid() as id"])))]
+                  (write-children! tx id recipe)
+                  id)))]
+     (hooks/changed! {:kind :recipe :action :add :id id :name (:title recipe)})
+     id)))
 
 (defn update!
   "Replace the editable fields, tags and lines of recipe ID with RECIPE and set STATUS."
   [id recipe status]
   {:pre [(statuses status)]}
-  (jdbc/with-db-transaction [tx (db/get-db-spec)]
-    (jdbc/execute! tx (into [(str "update recipes set " (str/join ", " (map #(str (name %) " = ?") columns))
-                                  ", status = ?, modified_at = ? where id = ?")]
-                            (concat (map recipe columns) [status (u/now-ms) id])))
-    (write-children! tx id recipe)))
+  (hooks/writing
+   (jdbc/with-db-transaction [tx (db/get-db-spec)]
+     (jdbc/execute! tx (into [(str "update recipes set " (str/join ", " (map #(str (name %) " = ?") columns))
+                                   ", status = ?, modified_at = ? where id = ?")]
+                             (concat (map recipe columns) [status (u/now-ms) id])))
+     (write-children! tx id recipe))
+   (hooks/changed! {:kind :recipe :action :edit :id id :name (:title recipe)})))
 
 (defn set-line-ingredient!
   "Match recipe line LINE-ID to ingredient ING-ID."
@@ -235,16 +241,20 @@
 (defn set-image!
   "Set recipe ID's image file name (nil removes it). Returns the previous name."
   [id image-name]
-  (let [old (:image_path (first (db/run-db-query ["select image_path from recipes where id = ?" id])))]
-    (db/exe-db-stmt ["update recipes set image_path = ?, modified_at = ? where id = ?" image-name (u/now-ms) id])
-    old))
+  (hooks/writing
+   (let [{old :image_path title :title} (first (db/run-db-query ["select image_path, title from recipes where id = ?" id]))]
+     (db/exe-db-stmt ["update recipes set image_path = ?, modified_at = ? where id = ?" image-name (u/now-ms) id])
+     (when title (hooks/changed! {:kind :recipe :action :edit :id id :name title}))
+     old)))
 
 (defn delete!
   "Delete recipe ID with its tags and lines. Returns its image file name, if any."
   [id]
-  (let [old (:image_path (first (db/run-db-query ["select image_path from recipes where id = ?" id])))]
-    (db/exe-db-stmt ["delete from recipes where id = ?" id])
-    old))
+  (hooks/writing
+   (let [{old :image_path title :title} (first (db/run-db-query ["select image_path, title from recipes where id = ?" id]))]
+     (db/exe-db-stmt ["delete from recipes where id = ?" id])
+     (when title (hooks/changed! {:kind :recipe :action :del :id id :name title}))
+     old)))
 
 (defn by-image
   "The recipe whose image is NAME, or nil."

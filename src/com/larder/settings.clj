@@ -19,6 +19,7 @@
   Settings editable by admins at runtime (site name, access levels) live in the
   global_settings table instead (see `com.larder.global-settings`)."
   (:require [clojure.edn :as edn]
+            [clojure.string]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
             [com.larder.wrappers.path-utils :as pu]))
@@ -34,7 +35,13 @@
    ;; Enables /api/echo (admins only), which prints raw requests.
    :debug false
    ;; Files (recipe images, import archives) are uploaded in pieces of this many MB.
-   :upload-chunk-mb 1})
+   :upload-chunk-mb 1
+   ;; The git repo of recipe and ingredient files; blank: <data-root>/library.
+   :library-path ""
+   ;; Pushed to after each commit (and pulled from before); blank: no remote.
+   :library-remote ""
+   ;; Changes are committed once nobody has changed anything for this long.
+   :library-commit-delay-seconds 120})
 
 (defn config-path
   "Where the settings file lives."
@@ -43,11 +50,12 @@
 
 (def config-keys
   "Settings written by onboarding and editable under Settings -> Site -> Server configuration."
-  [:listen-port :data-root :sqlite-db-path :upload-chunk-mb :debug])
+  [:listen-port :data-root :sqlite-db-path :library-path :library-remote :upload-chunk-mb
+   :library-commit-delay-seconds :debug])
 
 (def restart-keys
   "Settings read once when Larder starts; changing them needs a restart."
-  #{:listen-port :data-root :sqlite-db-path :db})
+  #{:listen-port :data-root :sqlite-db-path :db :library-path :library-remote})
 
 ;; The restart-only settings this process is running with.
 (defonce ^:private pinned (atom nil))
@@ -112,6 +120,14 @@
   "The expanded data folder, or a folder inside it."
   ([] (pu/expand-home-path (:data-root (get-settings))))
   ([sub] (str (data-dir) "/" sub)))
+
+(defn library-path
+  "The library folder in effect (not expanded)."
+  []
+  (let [{:keys [library-path data-root]} (get-settings)]
+    (if (clojure.string/blank? library-path)
+      (str data-root "/library")
+      library-path)))
 
 (defn get-logfile
   "Today's log file name, inside `(data-dir \"logs\")`."

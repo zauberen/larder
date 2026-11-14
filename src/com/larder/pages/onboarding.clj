@@ -60,6 +60,7 @@
                                   :value (or (:site_name values) gs/default-site-name)}]
               "Shown in the header and the browser tab.")]
    (sc/storage-fields values)
+   (sc/library-fields values)
    [:details.advanced
     [:summary "Advanced"]
     (sc/advanced-fields values)]

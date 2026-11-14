@@ -19,6 +19,7 @@
   (:require [clojure.string :as str]
             [com.larder.auth :as auth]
             [com.larder.global-settings :as gs]
+            [com.larder.library :as library]
             [com.larder.pages.connect :as connect]
             [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.layout :as layout]
@@ -216,6 +217,40 @@
           (gs/put! "public_base_url" (str/replace base-url #"/+$" ""))
           (r/h-respond (site-card {:kind :success :text "Saved."}))))))
 
+;;; Library
+
+(defn library-card
+  [& [message]]
+  (let [{:keys [dir git? remote pending commit-at last-commit-at last-push-at error]} (library/status)]
+    [:section#library-card.card
+     [:div.card-header [:h2 "Recipe library"]]
+     (ui/message-alert message)
+     (when error
+       (ui/alert :error (:text error) " (" (u/format-ts (:at error)) ")"))
+     [:p.muted "Recipes and ingredients are stored as text files in " [:code (or dir "—")]
+      (cond
+        (not dir) ", which hasn't started."
+        (not git?) ". Git isn't installed, so changes aren't committed."
+        remote (list ", committed and pushed to " [:code remote] ".")
+        :else ", committed locally (no remote is set).")]
+     (when git?
+       (list
+        [:p (if (pos? pending)
+              (str pending " change" (when (not= 1 pending) "s") " waiting"
+                   (when commit-at (str ", committing at " (u/format-ts commit-at))) ".")
+              "Nothing waiting to be committed.")]
+        [:p.muted "Last commit: " (u/format-ts last-commit-at)
+         (when remote (list " · Last push: " (u/format-ts last-push-at)))]
+        [:form {:hx-post "/api/site/library/commit" :hx-target "#library-card" :hx-swap "outerHTML"}
+         [:div.form-actions [:button.btn {:type "submit"} (if remote "Commit and push now" "Commit now")]]]))]))
+
+(defn api-library-commit
+  [_req _me]
+  (library/commit-soon!)
+  ;; Give a quick commit the chance to show up in the card.
+  (Thread/sleep 300)
+  (r/h-respond (library-card {:kind :info :text "Committing in the background; reload to see the result."})))
+
 ;;; Page
 
 (defn settings-page
@@ -235,4 +270,4 @@
            "account" (account-card me)
            "keys" (list (connect/keys-card req me) (connect/connections-card req me))
            "users" (users-card me)
-           "site" (list (site-card) (grocery-page/access-card req) (connect/mcp-card) (server-config/config-card)))])))))
+           "site" (list (site-card) (grocery-page/access-card req) (connect/mcp-card) (library-card) (server-config/config-card)))])))))

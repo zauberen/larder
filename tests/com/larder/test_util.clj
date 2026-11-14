@@ -19,6 +19,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string]
             [com.larder.database.migration :as m]
+            [com.larder.library :as library]
             [com.larder.ratelimit :as rl]
             [com.larder.settings :as s]
             [com.larder.users :as users]))
@@ -38,6 +39,9 @@
   (merge (s/get-default-settings)
          {:data-root root
           :sqlite-db-path (str root "/larder.db")
+          :library-path (str root "/library")
+          ;; Tests commit with library/flush! rather than waiting.
+          :library-commit-delay-seconds 3600
           :debug false}))
 
 (defn call-with-temp-env
@@ -57,6 +61,7 @@
           (users/create! "admin" "admin" "admin")
           (f)))
       (finally
+        (library/stop!)
         (reset! m/migration-chk-ran nil)
         (rl/reset-all!)
         (delete-recursively (io/file root))))))

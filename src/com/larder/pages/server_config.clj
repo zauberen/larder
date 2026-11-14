@@ -31,6 +31,9 @@
    :data-root "Data folder"
    :sqlite-db-path "Database file"
    :upload-chunk-mb "Upload piece size (MB)"
+   :library-path "Library folder"
+   :library-remote "Library remote"
+   :library-commit-delay-seconds "Commit delay (seconds)"
    :debug "Debug mode"})
 
 (def ^:private path-keys [:data-root :sqlite-db-path])
@@ -47,12 +50,28 @@
   (and (not (str/blank? p))
        (or (str/starts-with? p "~") (.isAbsolute (io/file p)))))
 
+(def max-commit-delay-seconds (* 24 60 60))
+
+(defn valid-remote?
+  "A git remote: a URL or scp-style address on one line, not an option or a helper
+  transport (ext::, fd::)."
+  [s]
+  (and (not (str/blank? s))
+       (<= (count s) 2000)
+       (not (re-find #"[\s\x00-\x1f]" s))
+       (not (str/starts-with? s "-"))
+       (not (re-find #"^[A-Za-z][A-Za-z0-9+.-]*::" s))))
+
 (defn parse
   "Read the configuration fields from form PARAMS. Returns [settings errors]."
   [params]
   (let [text #(some-> (get params %) str str/trim)
         settings (merge (into {} (for [k path-keys] [k (text k)]))
-                        {:listen-port (u/parse-int (text :listen-port))
+                        {:library-path (or (text :library-path) "")
+                         :library-remote (or (text :library-remote) "")
+                         :library-commit-delay-seconds (u/parse-int (text :library-commit-delay-seconds)
+                                                                    (:library-commit-delay-seconds (s/get-default-settings)))
+                         :listen-port (u/parse-int (text :listen-port))
                          :debug (= "1" (get params :debug))
                          ;; Blank or missing: the default.
                          :upload-chunk-mb (u/parse-int (text :upload-chunk-mb)
@@ -63,6 +82,12 @@
                  :always
                  (into (for [k path-keys :when (not (path? (get settings k)))]
                          (str (labels k) " must be an absolute path, or start with ~.")))
+                 (and (seq (:library-path settings)) (not (path? (:library-path settings))))
+                 (conj (str (labels :library-path) " must be an absolute path, or start with ~."))
+                 (and (seq (:library-remote settings)) (not (valid-remote? (:library-remote settings))))
+                 (conj "The library remote should be a git address, like git@github.com:you/recipes.git or https://….")
+                 (not (<= 0 (or (:library-commit-delay-seconds settings) -1) max-commit-delay-seconds))
+                 (conj (str "The commit delay must be between 0 and " max-commit-delay-seconds " seconds."))
                  (not (<= 1 (or (:upload-chunk-mb settings) 0) uploads/max-chunk-mb))
                  (conj (str "The upload piece size must be between 1 and " uploads/max-chunk-mb " MB.")))]
     [settings errors]))
@@ -111,7 +136,22 @@
    [:legend "Server"]
    (input values running :listen-port "Port of this web interface." {:type "number" :min 1 :max 65535})
    (input values running :data-root "Recipe images and logs are kept here.")
-   (input values running :sqlite-db-path "Recipes, the pantry, the grocery list and accounts are stored here.")])
+   (input values running :sqlite-db-path "The pantry, the grocery list, the meal plan and accounts are stored here, with an index of the library.")])
+
+(defn library-fields
+  [values & [running]]
+  [:fieldset.form-group
+   [:legend "Recipe library"]
+   [:p.form-hint "Recipes and ingredients are kept as text files in a git repo. Changes are committed "
+    "once nobody has changed anything for the commit delay, then pulled and pushed to the remote."]
+   (input values running :library-path "Blank: a library folder inside the data folder." {:required false})
+   (input values running :library-remote
+          (str "Optional. A git address Larder can push to without a password prompt (an SSH key or a "
+               "credential helper on this machine). Blank: commit locally only.")
+          {:required false :placeholder "git@github.com:you/recipes.git"})
+   (input values running :library-commit-delay-seconds
+          "How long to wait for more changes before committing (at most ten times this after the first)."
+          {:type "number" :min 0 :max max-commit-delay-seconds})])
 
 (defn advanced-fields
   [values & [running]]
@@ -141,6 +181,7 @@
      [:form.form {:hx-post "/api/site/config" :hx-target "#config-card" :hx-swap "outerHTML"
                   :style "margin-top: 1rem"}
       (storage-fields values running)
+      (library-fields values running)
       (advanced-fields values running)
       [:div.form-actions [:button.btn.btn-primary {:type "submit"} "Save"]]]]))
 

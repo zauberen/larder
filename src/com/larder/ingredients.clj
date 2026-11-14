@@ -20,6 +20,7 @@
   (:require [clojure.java.jdbc :as jdbc]
             [clojure.string :as str]
             [com.larder.database.db :as db]
+            [com.larder.library.hooks :as hooks]
             [com.larder.units :as units]
             [com.larder.util :as u]))
 
@@ -169,18 +170,30 @@
 (defn create!
   "Create an ingredient. Returns its id."
   [{:keys [name dimension density default_quantity default_unit always_have]}]
-  (jdbc/with-db-transaction [tx (db/get-db-spec)]
-    (let [t (u/now-ms)]
-      (jdbc/execute! tx ["insert into ingredients (name, dimension, density, default_quantity, default_unit, always_have, created_at, modified_at) values (?, ?, ?, ?, ?, ?, ?, ?)"
-                         (str/trim name) dimension density default_quantity default_unit (if always_have 1 0) t t])
-      (:id (first (jdbc/query tx ["select last_insert_rowid() as id"]))))))
+  (hooks/writing
+   (let [id (jdbc/with-db-transaction [tx (db/get-db-spec)]
+              (let [t (u/now-ms)]
+                (jdbc/execute! tx ["insert into ingredients (name, dimension, density, default_quantity, default_unit, always_have, created_at, modified_at) values (?, ?, ?, ?, ?, ?, ?, ?)"
+                                   (str/trim name) dimension density default_quantity default_unit (if always_have 1 0) t t])
+                (:id (first (jdbc/query tx ["select last_insert_rowid() as id"])))))]
+     (hooks/changed! {:kind :ingredient :action :add :id id :name (str/trim name)})
+     id)))
+
+(defn- changed-ingredient!
+  "Report an edit of ingredient ID."
+  [id]
+  (when-let [{n :name} (by-id id)]
+    (hooks/changed! {:kind :ingredient :action :edit :id id :name n})))
 
 (defn add-alias!
   "Make ALIAS another name of ingredient ID, unless it already matches something."
   [id alias]
   (let [alias (str/trim (or alias ""))]
     (when (and (seq alias) (nil? (match alias)))
-      (db/exe-db-stmt ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" id alias]))))
+      (hooks/writing
+       (let [result (db/exe-db-stmt ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" id alias])]
+         (when (pos? (or (first result) 0)) (changed-ingredient! id))
+         result)))))
 
 ;;; Recipe lines
 
@@ -212,10 +225,12 @@
 (defn update!
   "Save the edit form's fields for ingredient ID."
   [id {:keys [name dimension density default_quantity default_unit always_have]}]
-  (db/exe-db-stmt [(str "update ingredients set name = ?, dimension = ?, density = ?, default_quantity = ?,"
-                        " default_unit = ?, always_have = ?, modified_at = ? where id = ?")
-                   (str/trim name) dimension density default_quantity (when default_quantity default_unit)
-                   (if always_have 1 0) (u/now-ms) id]))
+  (hooks/writing
+   (db/exe-db-stmt [(str "update ingredients set name = ?, dimension = ?, density = ?, default_quantity = ?,"
+                         " default_unit = ?, always_have = ?, modified_at = ? where id = ?")
+                    (str/trim name) dimension density default_quantity (when default_quantity default_unit)
+                    (if always_have 1 0) (u/now-ms) id])
+   (changed-ingredient! id)))
 
 (defn alias-errors
   "Errors for giving ingredient ID the ALIASES."
@@ -228,30 +243,37 @@
 (defn set-aliases!
   "Replace ingredient ID's aliases."
   [id aliases]
-  (jdbc/with-db-transaction [tx (db/get-db-spec)]
-    (jdbc/execute! tx ["delete from ingredient_aliases where ingredient_id = ?" id])
-    (doseq [a (distinct (map str/trim aliases)) :when (seq a)]
-      (jdbc/execute! tx ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" id a]))))
+  (hooks/writing
+   (jdbc/with-db-transaction [tx (db/get-db-spec)]
+     (jdbc/execute! tx ["delete from ingredient_aliases where ingredient_id = ?" id])
+     (doseq [a (distinct (map str/trim aliases)) :when (seq a)]
+       (jdbc/execute! tx ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" id a])))
+   (changed-ingredient! id)))
 
 (defn merge!
   "Fold ingredient FROM-ID into INTO-ID: its recipe lines, pantry rows, grocery items and
   aliases move over, its name becomes an alias, and INTO-ID takes its density and default
   purchase size where it has none. FROM-ID is then deleted. Returns the counts moved."
   [from-id into-id]
-  (jdbc/with-db-transaction [tx (db/get-db-spec)]
-    (let [q (fn [sql] (first (jdbc/execute! tx [sql into-id from-id])))
-          from (first (jdbc/query tx [(str "select " columns " from ingredients where id = ?") from-id]))
-          moved {:recipe_lines (q "update recipe_ingredients set ingredient_id = ? where ingredient_id = ?")
-                 :pantry_rows (q "update pantry_items set ingredient_id = ? where ingredient_id = ?")
-                 :grocery_items (q "update grocery_items set ingredient_id = ? where ingredient_id = ?")}]
-      (q "update ingredient_aliases set ingredient_id = ? where ingredient_id = ?")
-      (jdbc/execute! tx [(str "update ingredients set density = coalesce(density, ?),"
-                              " default_unit = case when default_quantity is null then ? else default_unit end,"
-                              " default_quantity = coalesce(default_quantity, ?), modified_at = ? where id = ?")
-                         (:density from) (:default_unit from) (:default_quantity from) (u/now-ms) into-id])
-      (jdbc/execute! tx ["delete from ingredients where id = ?" from-id])
-      (jdbc/execute! tx ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" into-id (:name from)])
-      moved)))
+  (hooks/writing
+   (let [[from moved]
+         (jdbc/with-db-transaction [tx (db/get-db-spec)]
+           (let [q (fn [sql] (first (jdbc/execute! tx [sql into-id from-id])))
+                 from (first (jdbc/query tx [(str "select " columns " from ingredients where id = ?") from-id]))
+                 moved {:recipe_lines (q "update recipe_ingredients set ingredient_id = ? where ingredient_id = ?")
+                        :pantry_rows (q "update pantry_items set ingredient_id = ? where ingredient_id = ?")
+                        :grocery_items (q "update grocery_items set ingredient_id = ? where ingredient_id = ?")}]
+             (q "update ingredient_aliases set ingredient_id = ? where ingredient_id = ?")
+             (jdbc/execute! tx [(str "update ingredients set density = coalesce(density, ?),"
+                                     " default_unit = case when default_quantity is null then ? else default_unit end,"
+                                     " default_quantity = coalesce(default_quantity, ?), modified_at = ? where id = ?")
+                                (:density from) (:default_unit from) (:default_quantity from) (u/now-ms) into-id])
+             (jdbc/execute! tx ["delete from ingredients where id = ?" from-id])
+             (jdbc/execute! tx ["insert or ignore into ingredient_aliases (ingredient_id, alias) values (?, ?)" into-id (:name from)])
+             [from moved]))]
+     (hooks/changed! {:kind :ingredient :action :del :id from-id :name (:name from)}
+                     {:kind :ingredient :action :edit :id into-id :name (:name (by-id into-id))})
+     moved)))
 
 ;;; Review
 

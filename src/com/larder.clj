@@ -30,6 +30,7 @@
             [com.larder.auth :as auth]
             [com.larder.database.db :as db]
             [com.larder.database.sqlite :as sqlite]
+            [com.larder.library :as library]
             [com.larder.mcp :as mcp]
             [com.larder.middleware :as mw]
             [com.larder.pages.login :as lp]
@@ -170,6 +171,8 @@
     (auth/requires-user app-settings/api-change-password req))
   (cjr/POST "/api/site/settings" req
     (auth/requires-admin app-settings/api-save-site req))
+  (cjr/POST "/api/site/library/commit" req
+    (auth/requires-admin app-settings/api-library-commit req))
   (cjr/POST "/api/site/config" req
     (auth/requires-admin server-config/api-save req))
 
@@ -243,7 +246,8 @@
   "Bring the database into a consistent state and start the background services."
   []
   (pu/create-dir (:data-root (s/get-settings)))
-  (db/get-db-spec))
+  (db/get-db-spec)
+  (library/init!))
 
 (defn- setup-routes
   "The only routes served until setup is finished."
