@@ -71,6 +71,15 @@
            (select-keys parsed [:id :title :description :servings :prep_minutes :cook_minutes :rating :status :steps :source_url :created_at :modified_at])))
     (is (= ["breakfast" "sweet"] (:tags parsed)))
     (is (= ["2 cups flour" "1 egg"] (:lines parsed)))
+    (testing "lines that look like section markers are escaped"
+      (let [desc "Before.\n[Steps]\n  [ingredients]\n\\[Description]\nAfter."
+            id (recipes/create! (form {:title "Odd" :description desc :steps "Mix.\n[Steps]"}) "draft" 1)
+            text (fmt/render-recipe (recipes/by-id id))
+            [parsed errors] (fmt/parse-recipe text)]
+        (is (str/includes? text "\n\\[Steps]\n  \\[ingredients]\n\\\\[Description]\n"))
+        (is (empty? errors))
+        (is (= desc (:description parsed)))
+        (is (= "Mix.\n[Steps]" (:steps parsed)))))
     (testing "errors"
       (is (some #(str/includes? % "Unknown field") (second (fmt/parse-recipe "title: X\nservngs: 4\n"))))
       (is (seq (second (fmt/parse-recipe "id: 3\n\n[Steps]\nMix.\n"))) "a title is required")

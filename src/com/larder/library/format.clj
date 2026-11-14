@@ -65,6 +65,20 @@
 
 (def ^:private section-re #"(?i)\[(description|ingredients|steps)\]")
 
+;; A body line that would read as a section marker ([Steps], or an already escaped
+;; \[Steps]) is written with one more backslash in front; reading removes one.
+(def ^:private escaped-re #"(?i)\\*\[(?:description|ingredients|steps)\]")
+
+(defn escape-line
+  [line]
+  (if (re-matches escaped-re (str/trim line)) (str/replace-first line #"^(\s*)" "$1\\\\") line))
+
+(defn unescape-line
+  [line]
+  (if (re-matches #"(?i)\\+\[(?:description|ingredients|steps)\]" (str/trim line))
+    (str/replace-first line "\\" "")
+    line))
+
 (defn render-recipe
   "The file text for RECIPE (as from `recipes/by-id`)."
   [r]
@@ -82,7 +96,9 @@
                 ["modified" (iso (:modified_at r))]]
         section (fn [title body]
                   (when-not (str/blank? body)
-                    (str "\n[" title "]\n" (str/trim body) "\n")))]
+                    (str "\n[" title "]\n"
+                         (str/join "\n" (map escape-line (str/split-lines (str/trim body))))
+                         "\n")))]
     (str (str/join (for [[k v] header :when (some? v)] (str k ": " v "\n")))
          (section "Description" (normalize-newlines (:description r)))
          (section "Ingredients" (str/join "\n" (keep (comp one-line :original_text) (:ingredients r))))
@@ -113,7 +129,7 @@
                      (if-let [[_ s] (re-matches section-re (str/trim l))]
                        (recur more (str/lower-case s) (update acc (str/lower-case s) #(or % [])) stray)
                        (cond
-                         current (recur more current (update acc current conj l) stray)
+                         current (recur more current (update acc current conj (unescape-line l)) stray)
                          (str/blank? l) (recur more current acc stray)
                          :else (recur more current acc (conj stray l))))))
         [sections stray] sections
