@@ -19,6 +19,7 @@
   setting, the grocery list). No login required."
   (:require [com.larder.auth :as auth]
             [com.larder.global-settings :as gs]
+            [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.recipe-view :as view]
             [com.larder.recipes :as recipes]
             [com.larder.util :as u]
@@ -34,9 +35,10 @@
 
 (defn visible-tabs
   "Tabs shown on the public dashboard. The Grocery list tab joins when the grocery list
-  is open to everyone (phase 6)."
+  is open to everyone."
   []
-  [["recipes" "Recipes" "/"]])
+  (cond-> [["recipes" "Recipes" "/"]]
+    (= "open" (gs/grocery-access)) (conj ["grocery" "Grocery list" "/grocery"])))
 
 (defn public-shell
   "A public page with the header (logo, tabs, Log in) around BODY."
@@ -73,4 +75,11 @@
                   [:a.back-link {:href "/"} "← All recipes"]
                   [:h1.dashboard-title (:title recipe)]
                   (view/detail-body recipe))
+    (auth/not-found)))
+
+(defn grocery-page
+  "/grocery (TOKEN nil) and /g/:token: the grocery list when the access setting allows."
+  [req token]
+  (if (grocery-page/access req token)
+    (public-shell req "grocery" (grocery-page/public-body {:app? false :token token}))
     (auth/not-found)))

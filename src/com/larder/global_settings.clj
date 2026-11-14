@@ -18,7 +18,9 @@
   "Site settings editable by admins from the UI (the global_settings table)."
   (:require [clojure.string :as str]
             [com.larder.database.db :as db])
-  (:import (java.net URI)))
+  (:import (java.net URI)
+           (java.security MessageDigest SecureRandom)
+           (java.util Base64)))
 
 (def default-site-name "Larder")
 
@@ -26,7 +28,10 @@
   {"site_name" default-site-name
    ;; Public base URL, e.g. https://larder.example.com. Used in OAuth metadata and share
    ;; links; blank means the address the page was opened with.
-   "public_base_url" ""})
+   "public_base_url" ""
+   ;; Who can view and check off the grocery list without logging in: open (anyone,
+   ;; with a tab on the public dashboard), share (anyone with /g/<token>), login.
+   "grocery_access" "share"})
 
 (defn all-settings
   "Every site setting as a map of string key to string value, defaults included."
@@ -63,3 +68,36 @@
   "The configured public base URL without a trailing slash, or nil."
   []
   (some-> (get-setting "public_base_url") str/trim not-empty (str/replace #"/+$" "")))
+
+(def grocery-access-levels ["open" "share" "login"])
+
+(defn grocery-access
+  []
+  (let [v (get-setting "grocery_access")]
+    (if (some #{v} grocery-access-levels) v "share")))
+
+(defn- new-token
+  "32 random bytes, URL-safe base64."
+  []
+  (let [b (byte-array 32)]
+    (.nextBytes (SecureRandom.) b)
+    (.encodeToString (.withoutPadding (Base64/getUrlEncoder)) b)))
+
+(defn regenerate-share-token!
+  "Replace the grocery share token, invalidating the old link. Returns the new token."
+  []
+  (let [t (new-token)]
+    (put! "grocery_share_token" t)
+    t))
+
+(defn share-token
+  "The grocery share token, created on first use."
+  []
+  (or (not-empty (get-setting "grocery_share_token"))
+      (regenerate-share-token!)))
+
+(defn valid-share-token?
+  "True when T is the current share token (compared in constant time)."
+  [t]
+  (boolean (and (string? t) (seq t)
+                (MessageDigest/isEqual (.getBytes ^String (share-token) "UTF-8") (.getBytes ^String t "UTF-8")))))

@@ -23,7 +23,9 @@
 
 (def limits
   "bucket -> [max-events window-ms]."
-  {:login [10 (* 5 60 1000)]})
+  {:login [10 (* 5 60 1000)]
+   ;; Checking off and undoing grocery items without a login.
+   :grocery-public [120 (* 10 60 1000)]})
 
 (defn client-address
   "The address a request came from. X-Forwarded-For is not trusted, since any client

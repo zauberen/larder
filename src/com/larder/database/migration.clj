@@ -21,7 +21,7 @@
   They all run whenever `server-version` changes. Times are stored as epoch milliseconds."
   (:require [clojure.java.jdbc :as jdbc]))
 
-(def server-version "0.5.0")
+(def server-version "0.6.0")
 ;; Reset whenever this namespace is reloaded; set once check-run-migrations has run.
 (def migration-chk-ran (atom nil))
 
@@ -172,7 +172,30 @@
         "added_at integer not null,"
         "source text not null default 'manual',"
         "added_by integer references users (id) on delete set null)")
-   "create index if not exists pantry_items_ingredient on pantry_items (ingredient_id, added_at)"])
+   "create index if not exists pantry_items_ingredient on pantry_items (ingredient_id, added_at)"
+   ;; 0.6.0: grocery list and stores. section is grocery (tracked into the pantry) or
+   ;; misc. quantity/unit are the default amount to buy; purchased_* and pantry_item_id
+   ;; are set when a grocery item is completed, so undo can remove that pantry row.
+   (str "create table if not exists stores ("
+        "id integer primary key autoincrement,"
+        "name text not null unique collate nocase,"
+        "notes text)")
+   (str "create table if not exists grocery_items ("
+        "id integer primary key autoincrement,"
+        "section text not null,"
+        "ingredient_id integer references ingredients (id) on delete cascade,"
+        "text text,"
+        "quantity real,"
+        "unit text,"
+        "store_id integer references stores (id) on delete set null,"
+        "origin text not null default 'manual',"
+        "added_by integer references users (id) on delete set null,"
+        "added_at integer not null,"
+        "done_at integer,"
+        "purchased_quantity real,"
+        "purchased_unit text,"
+        "pantry_item_id integer)")
+   "create index if not exists grocery_items_open on grocery_items (done_at, section)"])
 
 (defn run-migrations
   "Initialize or update a database. No user is created: the first admin comes from onboarding."

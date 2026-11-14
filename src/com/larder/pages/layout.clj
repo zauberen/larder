@@ -37,6 +37,15 @@
       (or (= path "/app") (= path "/app/") (str/starts-with? path "/app/recipes")) "recipes"
       :else (some (fn [[k _ href]] (when (and (not= href "/app") (str/starts-with? path href)) k)) sections))))
 
+(defn site-url
+  "The public base URL setting, else the scheme and host REQ was made to."
+  [req]
+  (or (gs/public-base-url)
+      (str (if (or (= :https (:scheme req))
+                   (= "https" (some-> (get-in req [:headers "x-forwarded-proto"]) str/lower-case)))
+             "https" "http")
+           "://" (or (get-in req [:headers "x-forwarded-host"]) (get-in req [:headers "host"]) "localhost"))))
+
 (defn main
   "The swappable main content element for SECTION (a key of `sections`, \"add\" or nil).
   main.js reads data-section after each swap to move the sidebar highlight."

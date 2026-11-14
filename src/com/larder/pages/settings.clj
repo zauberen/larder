@@ -19,6 +19,7 @@
   (:require [clojure.string :as str]
             [com.larder.auth :as auth]
             [com.larder.global-settings :as gs]
+            [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.layout :as layout]
             [com.larder.pages.server-config :as server-config]
             [com.larder.response :as r]
@@ -231,4 +232,4 @@
          (case tab
            "account" (account-card me)
            "users" (users-card me)
-           "site" (list (site-card) (server-config/config-card)))])))))
+           "site" (list (site-card) (grocery-page/access-card req) (server-config/config-card)))])))))

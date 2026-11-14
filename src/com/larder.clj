@@ -34,6 +34,7 @@
             [com.larder.pages.app :as app]
             [com.larder.pages.login :as lp]
             [com.larder.pages.not-found :as nf]
+            [com.larder.pages.grocery :as grocery-page]
             [com.larder.pages.ingredients :as ingredients-page]
             [com.larder.pages.onboarding :as onboarding]
             [com.larder.pages.pantry :as pantry-page]
@@ -89,6 +90,29 @@
     (auth/requires-user (fn [req user] (pantry-page/api-update req user id)) req))
   (cjr/POST "/api/ingredients/:id" [id :as req]
     (auth/requires-user (fn [req user] (ingredients-page/api-save req user id)) req))
+  ;; Grocery list. Completion and undo also serve visitors, per the access setting.
+  (cjr/GET "/api/grocery/items/:id/complete" [id :as req]
+    (grocery-page/api-dialog req id))
+  (cjr/POST "/api/grocery/items/:id/complete" [id :as req]
+    (grocery-page/api-complete req id))
+  (cjr/POST "/api/grocery/items/:id/undo" [id :as req]
+    (grocery-page/api-undo req id))
+  (cjr/POST "/api/grocery" req
+    (auth/requires-user grocery-page/api-add req))
+  (cjr/POST "/api/grocery/clear-completed" req
+    (auth/requires-user grocery-page/api-clear-completed req))
+  (cjr/POST "/api/grocery/items/:id/store" [id :as req]
+    (auth/requires-user (fn [req user] (grocery-page/api-set-store req user id)) req))
+  (cjr/POST "/api/grocery/items/:id/delete" [id :as req]
+    (auth/requires-user (fn [req user] (grocery-page/api-delete req user id)) req))
+  (cjr/POST "/api/stores" req
+    (auth/requires-user grocery-page/api-add-store req))
+  (cjr/POST "/api/stores/:id/delete" [id :as req]
+    (auth/requires-user (fn [req user] (grocery-page/api-delete-store req user id)) req))
+  (cjr/POST "/api/site/grocery-access" req
+    (auth/requires-admin grocery-page/api-save-access req))
+  (cjr/POST "/api/site/grocery-link" req
+    (auth/requires-admin grocery-page/api-regenerate-link req))
   ;; Files (recipe images) sent in pieces under the request body limit.
   (cjr/POST "/api/uploads" req
     (auth/requires-user recipes-page/api-upload-start req))
@@ -111,6 +135,10 @@
   ;; Public pages
   (cjr/GET "/" req
     (public/public-page req))
+  (cjr/GET "/grocery" req
+    (public/grocery-page req nil))
+  (cjr/GET "/g/:token" [token :as req]
+    (public/grocery-page req token))
   (cjr/GET "/recipes/:id" [id :as req]
     (public/recipe-page req id))
   (cjr/GET "/media/:file" [file :as req]
@@ -132,7 +160,7 @@
   (cjr/GET "/app/ingredients/:id/edit" [id :as req]
     (auth/requires-user (fn [req user] (ingredients-page/dialog-page req user id)) req))
   (cjr/GET "/app/grocery" req
-    (auth/requires-user app/grocery-page req))
+    (auth/requires-user grocery-page/grocery-page req))
   (cjr/GET "/app/settings" req
     (auth/requires-user (fn [req me] (app-settings/settings-page req me nil)) req))
   (cjr/GET "/app/settings/:tab" [tab :as req]
