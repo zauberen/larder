@@ -664,3 +664,13 @@ textarea.form-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, mon
 .picker-row:last-child { border-bottom: none; padding-bottom: 0; }
 .picker-row .inline-form { flex-wrap: wrap; }
 .picker-row select.form-input { width: auto; flex: 1; min-width: 10rem; }
+
+/* Add page */
+.add-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; max-width: 1000px; }
+.add-choices .card + .card { margin-top: 0; }
+.add-choice { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
+.add-choice .muted { line-height: 1.5; }
+.add-choice .inline-form, .add-choice .alert { width: 100%; margin: 0; }
+.when-busy { display: none; }
+.htmx-request .when-busy, .htmx-request.when-busy { display: inline; }
+.htmx-request .when-idle { display: none; }

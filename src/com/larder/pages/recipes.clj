@@ -22,6 +22,8 @@
             [clojure.tools.logging :as log]
             [com.larder.auth :as auth]
             [com.larder.images :as images]
+            [com.larder.import.core :as importer]
+            [com.larder.import.web]
             [com.larder.ingredients :as ingredients]
             [com.larder.pages.layout :as layout]
             [com.larder.pages.recipe-view :as view]
@@ -267,10 +269,6 @@
             (for [[action label cls] (get buttons (if new? :new (:status recipe)))]
               [:button.btn {:type "submit" :name "action" :value action :class cls} label]))])))
 
-(defn new-page
-  [req user]
-  (layout/app-page req user (editor-main user nil)))
-
 (defn edit-page
   [req user id]
   (if-let [recipe (recipes/by-id (u/parse-int id))]
@@ -347,6 +345,60 @@
         {:status 200 :body ""
          :headers {"HX-Location" (json/write-str {:path "/app" :target "#main" :select "#main" :swap "outerHTML"})}})
     (auth/not-found)))
+
+;;; Add and import
+
+(defn add-main
+  "The Add page: start a blank recipe or import one from a web page. On a failed import
+  URL is kept and, when the page has no recipe data, a blank editor is offered with it."
+  [& [{:keys [url message offer-blank?]}]]
+  (layout/main
+   "add"
+   [:h1.dashboard-title "Add a recipe"]
+   [:div.add-choices
+    [:section.card.add-choice
+     [:div.card-header [:h2 "Import from URL"]]
+     [:p.muted "Paste the address of a recipe page. Larder reads the recipe data most recipe sites publish "
+      "and saves it, published, with its image."]
+     (ui/message-alert message)
+     (when offer-blank?
+       [:p [:a.btn.btn-secondary.small (ui/nav-attrs (str "/app/recipes/new?blank=1&source_url="
+                                                          (java.net.URLEncoder/encode (str url) "UTF-8")))
+            "Write it in the editor instead"]])
+     [:form.inline-form.import-form {:hx-post "/api/recipes/import" :hx-target "#main" :hx-swap "outerHTML"
+                                     :hx-disabled-elt "find button"}
+      [:input.form-input {:type "url" :name "url" :value url :required true :placeholder "https://"
+                          :aria-label "Recipe address"}]
+      [:button.btn.btn-primary {:type "submit"} [:span.when-idle "Import"] [:span.when-busy "Importing…"]]]]
+    [:section.card.add-choice
+     [:div.card-header [:h2 "New recipe"]]
+     [:p.muted "Type a recipe in yourself. Save it as a draft until it's ready to publish."]
+     [:a.btn.btn-secondary (ui/nav-attrs "/app/recipes/new?blank=1") "Start a blank recipe"]]]))
+
+(defn new-page
+  "/app/recipes/new: the choice, or with ?blank=1 the editor (source_url may be prefilled)."
+  [req user]
+  (let [{:keys [blank source_url]} (:params req)]
+    (layout/app-page req user
+                     (if blank
+                       (editor-main user nil (when (seq source_url) {:servings 4 :source_url source_url}))
+                       (add-main)))))
+
+(defn api-import
+  "Import the recipe at the posted URL and show it."
+  [req user]
+  (let [url (str/trim (str (get-in req [:params :url])))]
+    (try
+      (let [imported (first (importer/import-source {:kind :web :url url}))
+            {:keys [id warnings]} (importer/save! imported (:id user))]
+        (saved-response id {:kind (if (seq warnings) :info :success)
+                            :text (str/join " " (cons "Imported and published." warnings))}))
+      (catch clojure.lang.ExceptionInfo e
+        (let [{:keys [user-message no-recipe]} (ex-data e)]
+          (when-not user-message (log/warn e "Import failed for" url))
+          (r/h-respond (add-main {:url url
+                                  :message {:kind :error :text (or user-message "The import failed.")}
+                                  :offer-blank? no-recipe})))))))
 
 ;;; Uploads and images
 

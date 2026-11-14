@@ -68,6 +68,8 @@
   ;; Recipes
   (cjr/POST "/api/recipes" req
     (auth/requires-user recipes-page/api-create req))
+  (cjr/POST "/api/recipes/import" req
+    (auth/requires-user recipes-page/api-import req))
   (cjr/POST "/api/recipes/:id" [id :as req]
     (auth/requires-user (fn [req user] (recipes-page/api-update req user id)) req))
   (cjr/POST "/api/recipes/:id/lines/:line/match" [id line :as req]

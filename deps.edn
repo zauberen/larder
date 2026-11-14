@@ -14,6 +14,8 @@
         buddy/buddy-hashers        {:mvn/version "2.0.167"}
         ; JSON (upload replies; later the MCP endpoint)
         org.clojure/data.json      {:mvn/version "2.5.1"}
+        ; Reading recipe pages (schema.org JSON-LD and microdata)
+        org.jsoup/jsoup            {:mvn/version "1.18.3"}
 
         ;; Logging via clojure logging, wrapping slf4j
         org.slf4j/slf4j-simple     {:mvn/version "2.0.17"}
