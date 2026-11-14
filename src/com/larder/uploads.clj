@@ -75,20 +75,21 @@
 
 (defn start!
   "Register an upload of SIZE bytes for USER-ID. Returns {:id id :chunk-bytes n}; pieces
-  may be up to n bytes."
-  [user-id filename size]
-  (sweep!)
-  (when-not (and (integer? size) (pos? size))
-    (throw (user-error "The file is empty.")))
-  (when (> size max-upload-bytes)
-    (throw (user-error "The file is too large.")))
-  (let [id (str (UUID/randomUUID))
-        file (.toFile (Files/createTempFile "larder-upload" ".part" (make-array FileAttribute 0)))
-        ;; Fixed per upload, so changing the setting doesn't break uploads in progress.
-        chunk (chunk-bytes)]
-    (swap! uploads assoc id {:file file :filename (str filename) :size size :received 0 :chunk-bytes chunk
-                             :user-id user-id :touched (now) :lock (Object.)})
-    {:id id :chunk-bytes chunk}))
+  may be up to n bytes. MAX-BYTES (default `max-upload-bytes`) caps the file size."
+  ([user-id filename size] (start! user-id filename size max-upload-bytes))
+  ([user-id filename size max-bytes]
+   (sweep!)
+   (when-not (and (integer? size) (pos? size))
+     (throw (user-error "The file is empty.")))
+   (when (> size max-bytes)
+     (throw (user-error (str "The file is too large (the limit is " (quot max-bytes (* 1024 1024)) " MB)."))))
+   (let [id (str (UUID/randomUUID))
+         file (.toFile (Files/createTempFile "larder-upload" ".part" (make-array FileAttribute 0)))
+         ;; Fixed per upload, so changing the setting doesn't break uploads in progress.
+         chunk (chunk-bytes)]
+     (swap! uploads assoc id {:file file :filename (str filename) :size size :received 0 :chunk-bytes chunk
+                              :user-id user-id :touched (now) :lock (Object.)})
+     {:id id :chunk-bytes chunk})))
 
 (defn piece-limit
   "Largest request body to accept for a piece of any upload in progress (the setting may

@@ -21,7 +21,7 @@
   Times are stored as epoch milliseconds."
   (:require [clojure.java.jdbc :as jdbc]))
 
-(def server-version "0.1.0")
+(def server-version "0.2.0")
 ;; Reset whenever this namespace is reloaded; set once check-run-migrations has run.
 (def migration-chk-ran (atom nil))
 
@@ -45,7 +45,40 @@
         "created_at integer not null)")
    (str "create table if not exists global_settings ("
         "key text primary key,"
-        "value text)")])
+        "value text)")
+   ;; 0.2.0: recipes. Steps are plain text, one step per line. image_path is a file name
+   ;; in <data-root>/media. rating is 1-5 or null and belongs to the recipe, not a user.
+   (str "create table if not exists recipes ("
+        "id integer primary key autoincrement,"
+        "title text not null,"
+        "description text,"
+        "servings integer,"
+        "prep_minutes integer,"
+        "cook_minutes integer,"
+        "steps text,"
+        "source_url text,"
+        "status text not null default 'draft',"
+        "image_path text,"
+        "rating integer,"
+        "created_by integer references users (id) on delete set null,"
+        "created_at integer not null,"
+        "modified_at integer not null)")
+   ;; ingredient_id, quantity, unit and note are filled in by the line parser and matcher
+   ;; (phase 3); original_text is always kept.
+   (str "create table if not exists recipe_ingredients ("
+        "id integer primary key autoincrement,"
+        "recipe_id integer not null references recipes (id) on delete cascade,"
+        "position integer not null,"
+        "ingredient_id integer,"
+        "quantity real,"
+        "unit text,"
+        "note text,"
+        "original_text text not null)")
+   "create index if not exists recipe_ingredients_recipe on recipe_ingredients (recipe_id, position)"
+   (str "create table if not exists recipe_tags ("
+        "recipe_id integer not null references recipes (id) on delete cascade,"
+        "tag text not null,"
+        "primary key (recipe_id, tag))")])
 
 (defn run-migrations
   "Initialize or update a database. No user is created: the first admin comes from onboarding."

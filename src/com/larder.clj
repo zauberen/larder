@@ -36,6 +36,7 @@
             [com.larder.pages.not-found :as nf]
             [com.larder.pages.onboarding :as onboarding]
             [com.larder.pages.public :as public]
+            [com.larder.pages.recipes :as recipes-page]
             [com.larder.pages.server-config :as server-config]
             [com.larder.pages.settings :as app-settings]
             [com.larder.response :as r]
@@ -64,6 +65,20 @@
   ; Try logging into the application, requires username and password parameters
   (cjr/POST "/api/login" req
     (session/try-login req))
+  ;; Recipes
+  (cjr/POST "/api/recipes" req
+    (auth/requires-user recipes-page/api-create req))
+  (cjr/POST "/api/recipes/:id" [id :as req]
+    (auth/requires-user (fn [req user] (recipes-page/api-update req user id)) req))
+  (cjr/POST "/api/recipes/:id/delete" [id :as req]
+    (auth/requires-user (fn [req user] (recipes-page/api-delete req user id)) req))
+  ;; Files (recipe images) sent in pieces under the request body limit.
+  (cjr/POST "/api/uploads" req
+    (auth/requires-user recipes-page/api-upload-start req))
+  (cjr/PUT "/api/uploads/:id" [id :as req]
+    (auth/requires-user (fn [req user] (recipes-page/api-upload-chunk req user id)) req))
+  (cjr/DELETE "/api/uploads/:id" [id :as req]
+    (auth/requires-user (fn [req user] (recipes-page/api-upload-delete req user id)) req))
   ;; Settings
   (cjr/POST "/api/users" req
     (auth/requires-admin app-settings/api-create-user req))
@@ -79,12 +94,20 @@
   ;; Public pages
   (cjr/GET "/" req
     (public/public-page req))
+  (cjr/GET "/recipes/:id" [id :as req]
+    (public/recipe-page req id))
+  (cjr/GET "/media/:file" [file :as req]
+    (recipes-page/media req file))
 
   ;; Logged-in pages
   (cjr/GET "/app" req
-    (auth/requires-user app/recipes-page req))
+    (auth/requires-user recipes-page/recipes-page req))
   (cjr/GET "/app/recipes/new" req
-    (auth/requires-user app/add-page req))
+    (auth/requires-user recipes-page/new-page req))
+  (cjr/GET "/app/recipes/:id" [id :as req]
+    (auth/requires-user (fn [req user] (recipes-page/recipe-page req user id)) req))
+  (cjr/GET "/app/recipes/:id/edit" [id :as req]
+    (auth/requires-user (fn [req user] (recipes-page/edit-page req user id)) req))
   (cjr/GET "/app/meal-plan" req
     (auth/requires-user app/meal-plan-page req))
   (cjr/GET "/app/pantry" req

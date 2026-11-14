@@ -26,14 +26,6 @@
                                 [:h1.dashboard-title title]
                                 (ui/empty-state [:p.muted text]))))
 
-(defn recipes-page
-  [req user]
-  (placeholder req user "recipes" "Recipes" "No recipes yet."))
-
-(defn add-page
-  [req user]
-  (placeholder req user "add" "Add" "Creating and importing recipes arrives with the recipe editor."))
-
 (defn meal-plan-page
   [req user]
   (placeholder req user "meal-plan" "Meal plan" "Nothing planned yet."))

@@ -19,6 +19,9 @@
   setting, the grocery list). No login required."
   (:require [com.larder.auth :as auth]
             [com.larder.global-settings :as gs]
+            [com.larder.pages.recipe-view :as view]
+            [com.larder.recipes :as recipes]
+            [com.larder.util :as u]
             [com.larder.response :as r]
             [com.larder.ui :as ui]))
 
@@ -58,4 +61,16 @@
   [req]
   (public-shell req "recipes"
                 [:h1.dashboard-title "Recipes"]
-                (ui/empty-state [:p.muted "No recipes have been published yet."])))
+                (view/card-grid (for [rec (recipes/search {:status "published"})]
+                                  (view/recipe-card rec {:href (str "/recipes/" (:id rec))}))
+                                "No recipes have been published yet.")))
+
+(defn recipe-page
+  "A published recipe for visitors. Drafts are not found."
+  [req id]
+  (if-let [recipe (recipes/published-by-id (u/parse-int id))]
+    (public-shell req "recipes"
+                  [:a.back-link {:href "/"} "← All recipes"]
+                  [:h1.dashboard-title (:title recipe)]
+                  (view/detail-body recipe))
+    (auth/not-found)))

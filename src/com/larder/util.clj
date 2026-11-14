@@ -57,3 +57,8 @@
   "HTML checkboxes send a value only when checked."
   [v]
   (if (and v (not= v "") (not= v "0") (not= v "false")) 1 0))
+
+(defn single
+  "The first value of a form parameter that may have been sent more than once."
+  [v]
+  (if (sequential? v) (first v) v))
