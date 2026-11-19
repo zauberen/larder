@@ -196,6 +196,7 @@
       (is (= 404 (:status (req :get "/grocery"))))
       (is (= 404 (:status (visitor-complete token))))
       (let [sid (login "admin")]
+        (is (not (str/includes? (:text (req :get "/app/grocery" :sid sid)) "/g/")) "no share link while it can't work")
         (is (= 200 (:status (req :get (str "/g/" token) :sid sid))))
         (is (= 200 (:status (req :post (str "/api/grocery/items/" a "/complete") :sid sid :form {:skip "1"}))))))
     (testing "regenerating the link invalidates the old one"
@@ -205,6 +206,8 @@
         (is (not= token (gs/share-token)))
         (is (= 404 (:status (req :get (str "/g/" token)))))
         (is (= 200 (:status (req :get (str "/g/" (gs/share-token))))))
+        (is (str/includes? (:text (req :get "/app/grocery" :sid admin)) (str "/g/" (gs/share-token)))
+            "the grocery page shows the share link")
         (is (= 43 (count (gs/share-token))) "32 random bytes")))
     (testing "only admins change access"
       (users/create! "cook" "password1" "user")

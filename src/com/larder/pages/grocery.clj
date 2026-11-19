@@ -274,13 +274,23 @@
     [:input.form-input {:name "notes" :maxlength 500 :placeholder "Notes (optional)" :aria-label "Notes"}]
     [:button.btn.btn-secondary.small {:type "submit"} "Add store"]]])
 
+(defn- share-link
+  "The share link to copy, while the access setting lets it work."
+  [req]
+  (when (#{"open" "share"} (gs/grocery-access))
+    [:div.grocery-share
+     [:span.form-label "Share link"]
+     (ui/copy-field (str (layout/site-url req) "/g/" (gs/share-token)))]))
+
 (defn grocery-page
   [req user]
   (layout/app-page
    req user
    (layout/main
     "grocery"
-    [:h1.dashboard-title "Grocery"]
+    [:div.page-top.grocery-top
+     [:h1.dashboard-title "Grocery"]
+     (share-link req)]
     (add-forms)
     (grocery-list {:app? true})
     (stores-card)
